@@ -1,14 +1,20 @@
 # CricPulse — Community Cricket Broadcast Platform
 
 A real-time, multi-tournament cricket scoring & broadcast platform. Think
-CricHeroes/ESPNcricinfo for village and community leagues: public viewers follow
-live ball-by-ball scores, streams and stats with **no account**; authenticated
-**organizers** run tournaments, teams, rosters, fixtures and the pitch-side
-scorer.
+CricHeroes/ESPNcricinfo for community leagues: fans follow live ball-by-ball
+scores, streams and stats with **no account**; anyone can **sign in with their
+phone number** (no OTP, no password) and start their own tournament — the
+creator becomes its **organizer** and decides who else may edit and score.
 
-The platform is fully generic — any league can be created inside it (ball type,
-overs, city, banner, stage). Live updates are pushed to every open phone the
-instant a scorer taps a button; no page refreshes.
+The platform is fully generic — any league can be created inside it (name,
+city, ball type, overs, dates, banner, stage). Live updates are pushed to every
+open phone the instant a scorer taps a button; no page refreshes.
+
+> There is **no admin role and no admin page**. Every write (teams, rosters,
+> fixtures, ball-by-ball scoring, streams) is allowed only to the tournament's
+> **organizers** — the creator plus anyone they add by phone number. All other
+> signed-in users see the same public, read-only views as anonymous fans.
+> There is also **no demo data**: the app starts empty.
 
 ---
 
@@ -18,7 +24,8 @@ instant a scorer taps a button; no page refreshes.
 |------------|------|
 | Frontend   | Vite + React 19 + TypeScript + Tailwind CSS v4 |
 | Realtime   | **Convex** (reactive queries + mutations — ball-by-ball subscriptions) |
-| Auth       | Convex Auth (email OTP + anonymous guest), role-gated ADMIN/VIEWER |
+| Auth       | Convex Auth via `ConvexCredentials` — **phone number only** (no OTP, no email, no guest) |
+| Permissions| Per-tournament organizer checks (`requireOrganizer`) enforced inside every write mutation |
 | Routing    | React Router |
 | Streams    | Embedded YouTube / Twitch players (toggleable) |
 | UI         | shadcn/ui primitives + custom broadcast design system (`src/components/swiss.tsx`) |
@@ -42,12 +49,13 @@ instant a scorer taps a button; no page refreshes.
 | `/matches/:id` | Public | Broadcast match center — Scorecard · Overs · Commentary · Playing XI · Points · Caps tabs + live stream |
 | `/leaderboard` | Public | Points table (P/W/L/T, NRR) + Orange & Purple cap boards |
 | `/teams`, `/teams/:id` | Public | Team grid and squad pages |
-| `/auth` | Public | Sign in (email OTP or guest) |
-| `/admin` | **ADMIN** | Organizer hub: create tournaments, teams, rosters, fixtures, streams |
-| `/admin/scorer/:matchId` | **ADMIN** | Mobile ball-by-ball scorer (keypad, wickets, extras, undo, stream) |
+| `/auth` | Public | **Phone-number sign-in** (no OTP — the number is the account) |
+| `/dashboard` | Signed in | **My Hub** — profile, create a tournament, manage the ones you organize (teams, rosters, fixtures, streams, co-organizers), all tournaments |
+| `/scorer/:matchId` | Signed in + organizer | Mobile ball-by-ball scorer (keypad, wickets, extras, undo, stream) — blocked for non-organizers |
 
-Everything under `/admin` is wrapped in `RequireAuth` + `RequireAdmin`; every
-write mutation is additionally gated server-side with `requireAdmin()`.
+Legacy `/admin` and `/admin/scorer/:matchId` redirect to `/dashboard` and
+`/scorer/:matchId`. Every write mutation is gated server-side by
+`requireOrganizer(tournamentId)` — the client UI is just the convenience layer.
 
 ---
 
@@ -62,31 +70,33 @@ bun run dev              # http://localhost:5173
 Convex functions live in `src/convex/`. The client connects via
 `VITE_CONVEX_URL` (managed for you in this environment).
 
-## Seed demo data
+## No demo data
 
-Three tournaments (one live with a YouTube stream, one upcoming, one past) with
-8 + 4 + 4 teams, full squads and simulated completed/live matches:
+The app ships **empty** — no seeded tournaments, teams or matches. Everything
+is created by real users through the app. If you ever want to wipe the domain
+tables while developing (auth users are kept):
 
 ```bash
-bunx convex run seed:run
+bunx convex run seed:reset
 ```
 
-The seed wipes and recreates the domain tables (auth users are kept). Safe to
-run repeatedly.
+## How organizing works
 
-## Admin bootstrap (first organizer)
+1. Sign in at `/auth` with any phone number (a new number creates the profile;
+   the optional name is editable later in My Hub).
+2. Open `/dashboard` → **Start a new tournament**. You are its creator and
+   first organizer.
+3. Manage it from My Hub: add teams, build rosters (enter a player's phone
+   number and their name is pulled from their account — still editable),
+   schedule fixtures (venue, overs, stage, stream URL), and add
+   **co-organizers by phone number** so they can edit and score too.
+4. Open **Score** on a fixture to run the live scorer: set the openers and
+   bowler, then tap the keypad. Wide/no-ball re-bowls, over changes, crease
+   tracking, target chasing, innings completion and automatic result + NRR
+   computation are all enforced server-side.
 
-1. Sign in at `/auth` (email OTP, or "Continue as Guest" for a quick demo).
-2. Open `/admin` — since no admin exists yet, the gate offers **"Claim admin
-   role"**. The first signed-in user becomes the ADMIN.
-3. In the console: create a tournament → add teams → build rosters → schedule
-   fixtures (venue, overs, stage, stream URL) → open **Score** on a fixture to
-   run the live scorer.
-
-Every later admin must be promoted by an existing admin. The scoring engine
-enforces the rules server-side: wide/no-ball re-bowls, over changes, crease
-tracking, target chasing, innings completion and automatic result + NRR
-computation.
+Anyone who is *not* an organizer sees the tournament read-only — every write
+mutation throws without organizer permission.
 
 ## Deploy
 
@@ -94,8 +104,8 @@ computation.
   `VITE_CONVEX_URL` in front of the client build.
 - **Frontend:** any static host (Vercel, Netlify, Cloudflare Pages):
   `bun run build && bun run preview`.
-- No other secrets are required for a public read-only site; admin actions are
-  enforced by role, not by client.
+- No secrets are required for the public read-only site; every write is
+  enforced by organizer permission, not by the client.
 
 ## Porting to Supabase
 
@@ -103,14 +113,11 @@ If you want to run the PostgreSQL/PostgREST version instead:
 
 1. Create a free Supabase project.
 2. Run [`supabase-reference/schema.sql`](supabase-reference/schema.sql) in the
-   SQL editor — enums, profiles (role ADMIN/VIEWER), tournaments, teams,
-   players, matches, innings, deliveries, indexes, and RLS policies
-   (**SELECT public, writes require `role = 'ADMIN'`**).
-3. Promote the first organizer:
-   ```sql
-   update public.profiles set role = 'ADMIN' where email = 'you@example.com';
-   ```
-4. Point a Supabase client at it with `SUPABASE_URL` / `SUPABASE_ANON_KEY` and
+   SQL editor — profiles (with `phone`), tournaments (with `created_by`),
+   `tournament_organizers`, teams, players, matches, innings, deliveries,
+   indexes, and RLS policies (**SELECT public; writes require the caller to be
+   an organizer of that tournament**, via `is_organizer()`).
+3. Point a Supabase client at it with `SUPABASE_URL` / `SUPABASE_ANON_KEY` and
    subscribe to `deliveries` + `matches` row changes for the same live UX.
 
 ---
@@ -119,10 +126,13 @@ If you want to run the PostgreSQL/PostgREST version instead:
 
 `tournaments → teams → players` · `matches → innings → deliveries`
 
+- **users** — Convex Auth accounts with a canonical `phone` (the login handle)
+  and editable `name`
 - **tournaments** — name, year, city, ball type (Grace/Leather/Tennis), dates,
-  banner, default overs, featured flag
+  banner, default overs, featured flag, `organizers[]` (creator first)
 - **teams** — tournament, name, short code, color, logo
-- **players** — team, name, role, batting/bowling style, jersey number
+- **players** — team, name, phone (auto-fill source), role, batting/bowling
+  style, jersey number
 - **matches** — teams, status (UPCOMING/LIVE/COMPLETED), toss, overs, venue,
   stage, start time, YouTube/Twitch stream URL, result
 - **innings** — match, batting/bowling side, runs/wickets/balls, target, live

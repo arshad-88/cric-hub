@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAdmin } from "./helpers";
+import { requireOrganizer } from "./helpers";
 import { playerRoleValidator } from "./schema";
 
 export const listByTeam = query({
@@ -30,23 +30,25 @@ export const listByTournament = query({
   },
 });
 
-/** Admin: add a player to a squad (with styles + jersey number). */
+/** Organizer: add a player to a squad (phone autofill + styles + jersey). */
 export const create = mutation({
   args: {
     teamId: v.id("teams"),
     name: v.string(),
+    phone: v.optional(v.string()),
     role: playerRoleValidator,
     battingStyle: v.optional(v.string()),
     bowlingStyle: v.optional(v.string()),
     jerseyNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const team = await ctx.db.get(args.teamId);
     if (!team) throw new Error("Team not found.");
+    await requireOrganizer(ctx, team.tournamentId);
     return await ctx.db.insert("players", {
       teamId: args.teamId,
       name: args.name,
+      phone: args.phone,
       role: args.role,
       battingStyle: args.battingStyle,
       bowlingStyle: args.bowlingStyle,
@@ -55,22 +57,26 @@ export const create = mutation({
   },
 });
 
-/** Admin: edit a player's details. */
+/** Organizer: edit a player's details. */
 export const update = mutation({
   args: {
     playerId: v.id("players"),
     name: v.optional(v.string()),
+    phone: v.optional(v.string()),
     role: v.optional(playerRoleValidator),
     battingStyle: v.optional(v.string()),
     bowlingStyle: v.optional(v.string()),
     jerseyNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const player = await ctx.db.get(args.playerId);
     if (!player) throw new Error("Player not found.");
+    const team = await ctx.db.get(player.teamId);
+    if (!team) throw new Error("Team not found.");
+    await requireOrganizer(ctx, team.tournamentId);
     await ctx.db.patch(args.playerId, {
       name: args.name ?? player.name,
+      phone: args.phone !== undefined ? args.phone : player.phone,
       role: args.role ?? player.role,
       battingStyle: args.battingStyle !== undefined ? args.battingStyle : player.battingStyle,
       bowlingStyle: args.bowlingStyle !== undefined ? args.bowlingStyle : player.bowlingStyle,
@@ -80,13 +86,15 @@ export const update = mutation({
   },
 });
 
-/** Admin: remove a player from a squad. */
+/** Organizer: remove a player from a squad. */
 export const remove = mutation({
   args: { playerId: v.id("players") },
   handler: async (ctx, { playerId }) => {
-    await requireAdmin(ctx);
     const player = await ctx.db.get(playerId);
     if (!player) throw new Error("Player not found.");
+    const team = await ctx.db.get(player.teamId);
+    if (!team) throw new Error("Team not found.");
+    await requireOrganizer(ctx, team.tournamentId);
     await ctx.db.delete(playerId);
     return playerId;
   },

@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { getActiveTournament, requireAdmin } from "./helpers";
+import { getActiveTournament, requireOrganizer } from "./helpers";
 
 /** Teams of the active tournament (public). */
 export const listActive = query({
@@ -90,7 +90,7 @@ export const getDetail = query({
   },
 });
 
-/** Admin: create a team under a specific tournament. */
+/** Organizer: create a team under a specific tournament. */
 export const create = mutation({
   args: {
     name: v.string(),
@@ -100,9 +100,9 @@ export const create = mutation({
     tournamentId: v.id("tournaments"),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const tournament = await ctx.db.get(args.tournamentId);
     if (!tournament) throw new Error("Tournament not found.");
+    await requireOrganizer(ctx, args.tournamentId);
     return await ctx.db.insert("teams", {
       tournamentId: args.tournamentId,
       name: args.name,

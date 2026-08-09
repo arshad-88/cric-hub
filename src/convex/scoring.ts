@@ -7,7 +7,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { requireAdmin } from "./helpers";
+import { requireOrganizer } from "./helpers";
 import {
   buildCommentary,
   computeMatchResult,
@@ -90,9 +90,9 @@ export const startInnings = mutation({
     bowlerId: v.id("players"),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(args.matchId);
     if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
     if (args.battingTeamId === args.bowlingTeamId) {
       throw new Error("A team cannot bat and bowl to itself.");
     }
@@ -163,9 +163,11 @@ export const setOpenersAndBowler = mutation({
     bowlerId: v.id("players"),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const inn = await ctx.db.get(args.inningsId);
     if (!inn) throw new Error("Innings not found");
+    const matchForGate = await ctx.db.get(inn.matchId);
+    if (!matchForGate) throw new Error("Match not found");
+    await requireOrganizer(ctx, matchForGate.tournamentId);
     const deliveries = await getDeliveries(ctx, inn._id);
     if (deliveries.length > 0) {
       throw new Error("Cannot change the openers after the innings has begun.");
@@ -195,9 +197,11 @@ export const setOpenersAndBowler = mutation({
 export const setBowler = mutation({
   args: { inningsId: v.id("innings"), bowlerId: v.id("players") },
   handler: async (ctx, { inningsId, bowlerId }) => {
-    await requireAdmin(ctx);
     const inn = await ctx.db.get(inningsId);
     if (!inn) throw new Error("Innings not found");
+    const matchForGate = await ctx.db.get(inn.matchId);
+    if (!matchForGate) throw new Error("Match not found");
+    await requireOrganizer(ctx, matchForGate.tournamentId);
     await assertPlayerInTeam(ctx, bowlerId, inn.bowlingTeamId, "Bowler");
     await ctx.db.patch(inningsId, { currentBowlerId: bowlerId });
     return inningsId;
@@ -212,9 +216,11 @@ export const setBatsmen = mutation({
     nonStrikerId: v.id("players"),
   },
   handler: async (ctx, { inningsId, strikerId, nonStrikerId }) => {
-    await requireAdmin(ctx);
     const inn = await ctx.db.get(inningsId);
     if (!inn) throw new Error("Innings not found");
+    const matchForGate = await ctx.db.get(inn.matchId);
+    if (!matchForGate) throw new Error("Match not found");
+    await requireOrganizer(ctx, matchForGate.tournamentId);
     await assertPlayerInTeam(ctx, strikerId, inn.battingTeamId, "Striker");
     await assertPlayerInTeam(ctx, nonStrikerId, inn.battingTeamId, "Non-striker");
     if (strikerId === nonStrikerId) {
@@ -246,9 +252,9 @@ export const recordDelivery = mutation({
     newBatsmanId: v.optional(v.id("players")),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(args.matchId);
     if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
     if (match.status !== "LIVE") throw new Error("The match is not live.");
     const inn = await ctx.db.get(args.inningsId);
     if (!inn || inn.matchId !== match._id) {
@@ -423,9 +429,9 @@ export const recordDelivery = mutation({
 export const undoLastDelivery = mutation({
   args: { matchId: v.id("matches"), inningsId: v.id("innings") },
   handler: async (ctx, { matchId, inningsId }) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(matchId);
     if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
     const inn = await ctx.db.get(inningsId);
     if (!inn || inn.matchId !== match._id) {
       throw new Error("Innings does not belong to this match.");

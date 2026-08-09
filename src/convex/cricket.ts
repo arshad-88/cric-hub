@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // cricket.ts — pure cricket domain logic (no Convex I/O).
-// Encoding of the Laws of Cricket for a T20 village league, used by the
+// Encoding of the Laws of Cricket for community T20 leagues, used by the
 // scoring mutations, the seed simulator and all read-side aggregations so
 // every surface derives stats from a single source of truth.
 // ---------------------------------------------------------------------------

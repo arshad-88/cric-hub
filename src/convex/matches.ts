@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { getActiveTournament, requireAdmin } from "./helpers";
+import { getActiveTournament, requireOrganizer } from "./helpers";
 import {
   matchStageValidator,
   matchStatusValidator,
@@ -100,7 +100,7 @@ export const list = query({
   },
 });
 
-/** Admin: create a fixture. */
+/** Organizer: create a fixture. */
 export const create = mutation({
   args: {
     teamAId: v.id("teams"),
@@ -113,16 +113,16 @@ export const create = mutation({
     tournamentId: v.optional(v.id("tournaments")),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
     if (args.teamAId === args.teamBId) {
       throw new Error("A team cannot play itself.");
     }
     let tournamentId = args.tournamentId;
     if (!tournamentId) {
       const active = await getActiveTournament(ctx);
-      if (!active) throw new Error("No active tournament.");
+      if (!active) throw new Error("Select a tournament first.");
       tournamentId = active._id;
     }
+    await requireOrganizer(ctx, tournamentId);
     const [teamA, teamB] = await Promise.all([
       ctx.db.get(args.teamAId),
       ctx.db.get(args.teamBId),
@@ -149,13 +149,13 @@ export const create = mutation({
   },
 });
 
-/** Admin: paste/update the YouTube or Twitch stream URL at any point. */
+/** Organizer: paste/update the YouTube or Twitch stream URL at any point. */
 export const updateStreamUrl = mutation({
   args: { matchId: v.id("matches"), streamUrl: v.string() },
   handler: async (ctx, { matchId, streamUrl }) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(matchId);
     if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
     await ctx.db.patch(matchId, { streamUrl: streamUrl || undefined });
     return matchId;
   },
@@ -168,21 +168,21 @@ export const setToss = mutation({
     tossDecision: tossDecisionValidator,
   },
   handler: async (ctx, { matchId, tossWinnerId, tossDecision }) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(matchId);
     if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
     await ctx.db.patch(matchId, { tossWinnerId, tossDecision });
     return matchId;
   },
 });
 
-/** Admin: manually flip a match's status (e.g. abandon a fixture). */
+/** Organizer: manually flip a match's status (e.g. abandon a fixture). */
 export const setStatus = mutation({
   args: { matchId: v.id("matches"), status: matchStatusValidator },
   handler: async (ctx, { matchId, status }) => {
-    await requireAdmin(ctx);
     const match = await ctx.db.get(matchId);
     if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
     await ctx.db.patch(matchId, { status });
     return matchId;
   },

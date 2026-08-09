@@ -120,6 +120,7 @@ export interface TournamentLite {
   matchesCount: number;
   completedCount: number;
   liveMatchId?: string;
+  organizers?: string[];
 }
 
 export interface MatchRow {

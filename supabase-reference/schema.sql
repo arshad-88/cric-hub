@@ -2,20 +2,21 @@
 -- CricPulse — multi-tournament cricket broadcast platform
 -- PostgreSQL DDL (Supabase-ready) with Row Level Security
 --
---   Roles:   ADMIN  → organizers & ground scorers (full write access)
---            VIEWER → public readers (SELECT only, no login required)
+--   Access model (mirrors the app):
+--     - There is NO global admin role and no admin page.
+--     - Everyone reads everything (anon SELECT).
+--     - Any authenticated user can CREATE a tournament; they become its
+--       creator/organizer and may add co-organizers by phone.
+--     - INSERT/UPDATE/DELETE on a tournament and its teams/players/matches/
+--       innings/deliveries require the caller to be an organizer of that
+--       tournament (see public.is_organizer()).
 --
--- Run this file in the Supabase SQL editor. It mirrors the app's live data
--- model: tournaments → teams → players · matches → innings → deliveries.
--- All domain tables are readable by anyone (anon) and writable ONLY by users
--- whose profiles.role = 'ADMIN'.
+-- Run this file in the Supabase SQL editor.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
 -- 1. ENUMS
 -- ----------------------------------------------------------------------------
-
-create type public.app_role as enum ('ADMIN', 'VIEWER');
 
 create type public.match_status as enum ('UPCOMING', 'LIVE', 'COMPLETED');
 
@@ -32,18 +33,18 @@ create type public.match_stage as enum ('Group', 'Quarter-final', 'Semi-final', 
 create type public.ball_type as enum ('Grace Ball', 'Leather', 'Tennis');
 
 -- ----------------------------------------------------------------------------
--- 2. PROFILES  (auth.users → role)
+-- 2. PROFILES  (auth.users → profile; phone is the login handle)
 -- ----------------------------------------------------------------------------
 
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text,
+  phone text unique,                                -- phone-number login handle
   full_name text,
-  role public.app_role not null default 'VIEWER',
   created_at timestamptz not null default now()
 );
 
--- auto-create a profile on sign-up
+-- auto-create a profile on sign-up (phone comes from the client sign-in payload)
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -51,9 +52,15 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, full_name)
-  values (new.id, new.email, new.raw_user_meta_data ->> 'full_name')
-  on conflict (id) do nothing;
+  insert into public.profiles (id, email, phone, full_name)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data ->> 'phone',
+    new.raw_user_meta_data ->> 'full_name'
+  )
+  on conflict (id) do update
+    set phone = coalesce(public.profiles.phone, excluded.phone);
   return new;
 end;
 $$;
@@ -62,24 +69,11 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- admin check used by the RLS policies below (security definer so RLS can read it)
-create or replace function public.is_admin()
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.profiles
-    where id = auth.uid() and role = 'ADMIN'
-  );
-$$;
-
 -- ----------------------------------------------------------------------------
 -- 3. DOMAIN TABLES
 -- ----------------------------------------------------------------------------
 
--- tournaments (id, name, year, description)
+-- tournaments (id, name, year, description, organizers)
 create table public.tournaments (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -92,10 +86,22 @@ create table public.tournaments (
   banner_url text,
   default_overs integer check (default_overs between 1 and 50),
   active boolean not null default false,           -- featured on the landing page
+  created_by uuid not null references public.profiles (id),  -- the creator / first organizer
   created_at timestamptz not null default now()
 );
 
 create index tournaments_active_idx on public.tournaments (active) where active;
+
+-- organizers: who may edit + score a tournament (creator row is created first)
+create table public.tournament_organizers (
+  tournament_id uuid not null references public.tournaments (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  is_creator boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (tournament_id, user_id)
+);
+
+create index organizers_user_idx on public.tournament_organizers (user_id);
 
 -- teams (id, tournament_id, team_name, logo_url)
 create table public.teams (
@@ -110,11 +116,12 @@ create table public.teams (
 
 create index teams_tournament_idx on public.teams (tournament_id);
 
--- players (id, team_id, name, role, styles, jersey)
+-- players (id, team_id, name, phone, role, styles, jersey)
 create table public.players (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams (id) on delete cascade,
   name text not null,
+  phone text,                                       -- matches the account phone (auto-fill)
   role public.player_role not null default 'Batsman',
   batting_style text,
   bowling_style text,
@@ -203,18 +210,61 @@ alter table public.matches
   foreign key (current_innings_id) references public.innings (id);
 
 -- ----------------------------------------------------------------------------
--- 4. ROW LEVEL SECURITY
---    SELECT → everyone (anon viewers)
---    INSERT / UPDATE / DELETE → profiles.role = 'ADMIN' only
+-- 4. ORGANIZER CHECK (no global admin — per-tournament permission)
 -- ----------------------------------------------------------------------------
 
-alter table public.profiles    enable row level security;
-alter table public.tournaments enable row level security;
-alter table public.teams       enable row level security;
-alter table public.players     enable row level security;
-alter table public.matches     enable row level security;
-alter table public.innings     enable row level security;
-alter table public.deliveries  enable row level security;
+-- True when the current user is an organizer of the given tournament.
+create or replace function public.is_organizer(tournament_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.tournament_organizers
+    where tournament_id = $1 and user_id = auth.uid()
+  );
+$$;
+
+-- Convenience: which tournament does an innings/delivery belong to?
+create or replace function public.tournament_of_innings(innings_id uuid)
+returns uuid
+language sql
+stable
+as $$
+  select m.tournament_id
+  from public.innings i
+  join public.matches m on m.id = i.match_id
+  where i.id = $1;
+$$;
+
+create or replace function public.tournament_of_delivery(delivery_id uuid)
+returns uuid
+language sql
+stable
+as $$
+  select m.tournament_id
+  from public.deliveries d
+  join public.innings i on i.id = d.innings_id
+  join public.matches m on m.id = i.match_id
+  where d.id = $1;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5. ROW LEVEL SECURITY
+--    SELECT → everyone (anon viewers)
+--    CREATE tournament → any authenticated user (becomes organizer)
+--    INSERT / UPDATE / DELETE on domain rows → tournament organizer only
+-- ----------------------------------------------------------------------------
+
+alter table public.profiles              enable row level security;
+alter table public.tournaments           enable row level security;
+alter table public.tournament_organizers enable row level security;
+alter table public.teams                 enable row level security;
+alter table public.players               enable row level security;
+alter table public.matches               enable row level security;
+alter table public.innings               enable row level security;
+alter table public.deliveries            enable row level security;
 
 -- --- public read (anon + authenticated) -------------------------------------
 create policy "profiles_public_select"
@@ -222,6 +272,9 @@ create policy "profiles_public_select"
 
 create policy "tournaments_public_select"
   on public.tournaments for select using (true);
+
+create policy "organizers_public_select"
+  on public.tournament_organizers for select using (true);
 
 create policy "teams_public_select"
   on public.teams for select using (true);
@@ -238,50 +291,68 @@ create policy "innings_public_select"
 create policy "deliveries_public_select"
   on public.deliveries for select using (true);
 
--- --- admin-only write (INSERT / UPDATE / DELETE) ----------------------------
-create policy "profiles_admin_write"
-  on public.profiles for all
+-- --- tournament creation: anyone signed in, becomes the creator -------------
+create policy "tournaments_anyone_create"
+  on public.tournaments for insert
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  with check (auth.uid() = created_by);
 
-create policy "tournaments_admin_write"
-  on public.tournaments for all
+-- the creator's organizer row (created together with the tournament)
+create policy "organizers_creator_insert"
+  on public.tournament_organizers for insert
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  with check (auth.uid() = user_id and is_creator);
 
-create policy "teams_admin_write"
+-- organizers may add / remove co-organizers
+create policy "organizers_coorganizer_manage"
+  on public.tournament_organizers for all
+  to authenticated
+  using (public.is_organizer(tournament_id))
+  with check (public.is_organizer(tournament_id));
+
+-- --- organizer-only write on domain rows -------------------------------------
+create policy "tournaments_organizer_write"
+  on public.tournaments for update
+  to authenticated
+  using (public.is_organizer(id))
+  with check (public.is_organizer(id));
+
+create policy "tournaments_organizer_delete"
+  on public.tournaments for delete
+  to authenticated
+  using (public.is_organizer(id));
+
+create policy "teams_organizer_write"
   on public.teams for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_organizer(tournament_id))
+  with check (public.is_organizer(tournament_id));
 
-create policy "players_admin_write"
+create policy "players_organizer_write"
   on public.players for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_organizer((select tournament_id from public.teams where id = team_id)))
+  with check (public.is_organizer((select tournament_id from public.teams where id = team_id)));
 
-create policy "matches_admin_write"
+create policy "matches_organizer_write"
   on public.matches for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_organizer(tournament_id))
+  with check (public.is_organizer(tournament_id));
 
-create policy "innings_admin_write"
+create policy "innings_organizer_write"
   on public.innings for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_organizer(public.tournament_of_innings(id)))
+  with check (public.is_organizer(public.tournament_of_innings(id)));
 
-create policy "deliveries_admin_write"
+create policy "deliveries_organizer_write"
   on public.deliveries for all
   to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_organizer(public.tournament_of_delivery(id)))
+  with check (public.is_organizer(public.tournament_of_delivery(id)));
 
--- --- exception: users may update their own profile (display name, etc.) ------
+-- --- exceptions: users may update their own profile --------------------------
 create policy "profiles_self_update"
   on public.profiles for update
   to authenticated
@@ -292,12 +363,3 @@ create policy "profiles_self_update"
 grant usage on schema public to anon, authenticated;
 grant select on all tables in schema public to anon, authenticated;
 grant insert, update, delete on all tables in schema public to authenticated;
-
--- ============================================================================
--- BOOTSTRAP: promote the first organizer
---   Run this once (SQL editor / service role) after the first user signs up.
---   Replace the email with the platform owner's sign-up email:
---
---     update public.profiles set role = 'ADMIN'
---     where email = 'organizer@example.com';
--- ============================================================================

@@ -27,8 +27,10 @@ import { formatOvers } from "@/lib/vpl";
 import {
   ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   Check,
   Clapperboard,
+  KeyRound,
   RotateCcw,
   Video,
 } from "lucide-react";
@@ -67,6 +69,12 @@ export default function Scorer() {
   const setBowlerM = useMutation(api.scoring.setBowler);
   const setBatsmen = useMutation(api.scoring.setBatsmen);
   const updateStream = useMutation(api.matches.updateStreamUrl);
+  const hub = useQuery(
+    api.admin.hubStats,
+    scorecard?.tournament.id
+      ? { tournamentId: scorecard.tournament.id as Id<"tournaments"> }
+      : "skip",
+  );
 
   const [busy, setBusy] = useState(false);
   const [wicketOpen, setWicketOpen] = useState(false);
@@ -90,6 +98,34 @@ export default function Scorer() {
   }
 
   const { match, teamA, teamB } = scorecard;
+
+  // Only the tournament's organizers may score; everyone else is blocked
+  // (mutations are also enforced server-side).
+  if (hub && hub.isOrganizer === false) {
+    return (
+      <ScorerShell>
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <div className="max-w-sm border border-border bg-card p-8 panel-glow">
+            <KeyRound className="mx-auto size-8 text-[#facc15]" />
+            <h1 className="mt-4 text-lg font-extrabold uppercase tracking-tight text-white">
+              Organizers only
+            </h1>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              Only the tournament's organizers can score this match. Ask the
+              organizer to add your phone number to their tournament.
+            </p>
+            <Link
+              to="/dashboard"
+              className="mt-5 inline-flex items-center gap-1.5 bg-[#22c55e] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+            >
+              Back to My Hub <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+      </ScorerShell>
+    );
+  }
+
   const striker = current?.striker ?? null;
   const nonStriker = current?.nonStriker ?? null;
   const bowler = current?.bowler ?? null;
@@ -178,8 +214,8 @@ export default function Scorer() {
     <ScorerShell>
       {/* header */}
       <div className="flex items-center justify-between gap-3 border-b border-border bg-[#0b1524] px-4 py-3">
-        <Link to="/admin" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
-          <ArrowLeft className="size-3.5" /> Console
+        <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
+          <ArrowLeft className="size-3.5" /> My Hub
         </Link>
         <span className="truncate text-xs font-extrabold uppercase tracking-tight text-white">
           {teamA.shortCode} v {teamB.shortCode}

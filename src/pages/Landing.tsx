@@ -66,7 +66,7 @@ export default function Landing() {
             </div>
 
             <h1 className="mt-5 max-w-4xl text-5xl font-black uppercase leading-[0.95] tracking-tight text-white sm:text-7xl">
-              Village cricket.
+              Community cricket.
               <br />
               Live,{" "}
               <span className="text-[#22c55e] led-green">ball</span> by{" "}
@@ -99,7 +99,7 @@ export default function Landing() {
                 to="/auth"
                 className="inline-flex items-center gap-2 px-2 py-3 text-xs font-bold uppercase tracking-widest text-slate-400 underline decoration-[#22c55e] decoration-2 underline-offset-4 transition-colors hover:text-white"
               >
-                Organizer sign-in <ArrowRight className="size-4" />
+                Sign in · start your league <ArrowRight className="size-4" />
               </Link>
             </div>
           </motion.div>
@@ -140,7 +140,7 @@ export default function Landing() {
       {/* ================= FEATURES ================= */}
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-4 py-12">
-          <SectionHeading index="02" title="Built for the district" className="mb-6" />
+          <SectionHeading index="02" title="Built for your league" className="mb-6" />
           <div className="grid gap-px border border-border bg-border sm:grid-cols-3">
             {[
               {
@@ -316,9 +316,9 @@ export default function Landing() {
           <SectionHeading index="06" title="Spectators & organizers" className="mb-6" />
           <div className="grid gap-px border border-border bg-border md:grid-cols-2">
             <div className="bg-card p-6 panel-glow">
-              <MicroLabel className="text-[#22d3ee]">Free · no account</MicroLabel>
+              <MicroLabel className="text-[#22d3ee]">Every fan · free to watch</MicroLabel>
               <h3 className="mt-2 text-lg font-extrabold uppercase tracking-tight text-white">
-                The spectator
+                The fan
               </h3>
               <ol className="mt-4 space-y-3">
                 {[
@@ -337,15 +337,15 @@ export default function Landing() {
               </ol>
             </div>
             <div className="bg-card p-6 panel-glow">
-              <MicroLabel className="text-[#22c55e]">Authenticated · admin only</MicroLabel>
+              <MicroLabel className="text-[#22c55e]">Authenticated · organizers</MicroLabel>
               <h3 className="mt-2 text-lg font-extrabold uppercase tracking-tight text-white">
                 The organizer & scorer
               </h3>
               <ol className="mt-4 space-y-3">
                 {[
-                  "Sign in and claim the admin role",
+                  "Sign in with just your phone number — no OTP",
                   "Create tournaments, teams, rosters and fixtures",
-                  "Set the toss, openers and bowler, then tap the keypad",
+                  "Add co-organizers by phone so friends can score too",
                   "Stream link, undo, overs — all from the pitch side",
                 ].map((s, i) => (
                   <li key={s} className="flex items-start gap-3 text-xs leading-relaxed text-slate-400">

@@ -22,10 +22,12 @@ import {
   ArrowRight,
   CalendarPlus,
   Clapperboard,
+  KeyRound,
   LogOut,
+  Pencil,
   Plus,
-  ShieldCheck,
   Trash2,
+  Trophy,
   Users,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -59,32 +61,48 @@ interface PlayerDoc {
   _id: Id<"players">;
   teamId: Id<"teams">;
   name: string;
+  phone?: string;
   role: PlayerRole;
   battingStyle?: string;
   bowlingStyle?: string;
   jerseyNumber?: number;
 }
 
+interface TournamentRow {
+  id: string;
+  name: string;
+  year: number;
+  status: string;
+  teamsCount: number;
+  matchesCount: number;
+  liveMatchId?: string | null;
+  organizers?: string[];
+}
+
 export default function Dashboard() {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
 
   const tournaments = useQuery(api.tournaments.list);
+  const myTours = (tournaments ?? []).filter(
+    (t) => user && t.organizers?.includes(user._id),
+  );
   const [tournamentId, setTournamentId] = useState<string>("");
 
-  // default the working tournament to the featured one
+  // default the working tournament to the first one the user organizes
   useEffect(() => {
-    if (tournamentId || !tournaments) return;
-    const active =
-      tournaments.find((t) => t.status === "ACTIVE") ?? tournaments[0];
-    if (active) setTournamentId(active.id);
-  }, [tournaments, tournamentId]);
+    if (tournamentId || myTours.length === 0) return;
+    setTournamentId(myTours[0].id);
+  }, [myTours, tournamentId]);
+
+  const working = tournaments?.find((t) => t.id === tournamentId) ?? null;
+  const canManage = working
+    ? working.organizers?.includes(user?._id ?? "") ?? false
+    : false;
 
   const stats = useQuery(
-    api.admin.adminStats,
-    tournamentId
-      ? { tournamentId: tournamentId as Id<"tournaments"> }
-      : {},
+    api.admin.hubStats,
+    tournamentId ? { tournamentId: tournamentId as Id<"tournaments"> } : "skip",
   );
   const teams = useQuery(
     api.teams.listByTournament,
@@ -105,8 +123,6 @@ export default function Dashboard() {
       : "skip",
   );
 
-  const working = tournaments?.find((t) => t.id === tournamentId) ?? null;
-
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
@@ -114,7 +130,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* console header */}
+      {/* hub header */}
       <header className="sticky top-0 z-40 border-b border-border bg-[#0b1524]/95 backdrop-blur">
         <div className="h-0.5 bg-gradient-to-r from-[#22c55e] via-[#facc15] to-[#22d3ee]" aria-hidden />
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
@@ -126,12 +142,12 @@ export default function Dashboard() {
               <ArrowLeft className="size-3.5" /> Public site
             </Link>
             <span className="hidden items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#22c55e] sm:inline-flex">
-              <ShieldCheck className="size-3.5" /> Organizer console
+              <Trophy className="size-3.5" /> My Hub
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="micro-label hidden text-slate-500 md:inline">
-              {working ? `${working.name} ${working.year}` : "No tournament"}
+            <span className="micro-label hidden max-w-48 truncate text-slate-500 md:inline">
+              {user?.name ?? "Signed in"} · {user?.phone ?? ""}
             </span>
             <Button
               type="button"
@@ -146,14 +162,13 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">
-        {/* tournament selector */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tight text-white">
-              Organizer console
+              My Hub
             </h1>
             <p className="mt-1 text-[11px] uppercase tracking-widest text-slate-500">
-              Admin only — tournaments, teams, rosters and fixtures
+              Create tournaments · manage the ones you organize · score live
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -161,7 +176,7 @@ export default function Dashboard() {
               Working tournament
             </Label>
             <Select value={tournamentId || undefined} onValueChange={setTournamentId}>
-              <SelectTrigger className="h-10 w-64 rounded-none border-border bg-card text-xs text-slate-200">
+              <SelectTrigger className="h-10 w-72 rounded-none border-border bg-card text-xs text-slate-200">
                 <SelectValue placeholder="Select tournament" />
               </SelectTrigger>
               <SelectContent className="rounded-none border-border bg-card">
@@ -175,26 +190,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* stats */}
-        <div className="mt-6 grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-5">
-          <StatTile value={stats?.counts.teams ?? "—"} label="Teams" />
-          <StatTile value={stats?.counts.players ?? "—"} label="Players" />
-          <StatTile value={stats?.counts.upcoming ?? "—"} label="Upcoming" tone="gold" />
-          <StatTile value={stats?.counts.live ?? "—"} label="Live" tone="red" />
-          <StatTile value={stats?.counts.completed ?? "—"} label="Completed" tone="cyan" />
+        {/* profile + stats */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          <ProfileCard />
+          <div className="grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-5 lg:col-span-2">
+            <StatTile value={stats?.counts.teams ?? "—"} label="Teams" />
+            <StatTile value={stats?.counts.players ?? "—"} label="Players" />
+            <StatTile value={stats?.counts.upcoming ?? "—"} label="Upcoming" tone="gold" />
+            <StatTile value={stats?.counts.live ?? "—"} label="Live" tone="red" />
+            <StatTile value={stats?.counts.completed ?? "—"} label="Completed" tone="cyan" />
+          </div>
         </div>
 
         <div className="mt-10 grid gap-8 lg:grid-cols-2">
           <section>
-            <SectionTitle index="01" title="New tournament" />
-            <TournamentCreator
-              defaultOvers={working?.ballType ? undefined : 20}
-              onCreated={(id) => setTournamentId(id)}
-            />
+            <SectionTitle index="01" title="Start a new tournament" />
+            <TournamentCreator onCreated={(id) => setTournamentId(id)} />
             <div className="mt-6">
-              <SectionTitle index="02" title="All tournaments" />
-              <TournamentList
-                tournaments={tournaments ?? []}
+              <SectionTitle index="02" title="Tournaments I organize" />
+              <MyTournamentList
+                tournaments={myTours}
                 workingId={tournamentId}
                 onSelect={setTournamentId}
               />
@@ -202,25 +217,53 @@ export default function Dashboard() {
           </section>
 
           <section>
-            <SectionTitle index="03" title="Teams & rosters" />
-            <TeamManager
-              tournamentId={tournamentId as Id<"tournaments"> | ""}
-              teams={teams ?? []}
-              players={roster?.players ?? []}
-            />
-            <div className="mt-6">
-              <SectionTitle index="04" title="Schedule a fixture" />
-              <MatchScheduler
-                tournamentId={tournamentId as Id<"tournaments"> | ""}
-                teams={teams ?? []}
-              />
-            </div>
+            <SectionTitle index="03" title="Manage tournament" />
+            {working ? (
+              canManage ? (
+                <ManagePanel
+                  tournamentId={tournamentId as Id<"tournaments">}
+                  teams={teams ?? []}
+                  players={roster?.players ?? []}
+                  matches={matches ?? []}
+                  organizers={stats?.organizers ?? []}
+                />
+              ) : (
+                <div className="border border-border bg-card p-6 text-center panel-glow">
+                  <KeyRound className="mx-auto size-7 text-[#facc15]" />
+                  <p className="mt-3 text-sm font-extrabold uppercase tracking-tight text-white">
+                    You don't organize this one yet
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                    {working.name} {working.year} is managed by its organizers.
+                    Ask them to add your phone number and you'll be able to
+                    manage teams and score matches here.
+                  </p>
+                  <Link
+                    to={`/matches?tournament=${working.id}`}
+                    className="mt-4 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#22d3ee] hover:underline"
+                  >
+                    View it publicly <ArrowRight className="size-3.5" />
+                  </Link>
+                </div>
+              )
+            ) : (
+              <div className="border border-border bg-card p-6 text-center panel-glow">
+                <Plus className="mx-auto size-7 text-[#22c55e]" />
+                <p className="mt-3 text-sm font-extrabold uppercase tracking-tight text-white">
+                  Nothing selected yet
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  Create a tournament or pick one you organize to manage teams,
+                  rosters, fixtures and scoring.
+                </p>
+              </div>
+            )}
           </section>
         </div>
 
         <div className="mt-10">
-          <SectionTitle index="05" title="Fixtures & scoring" />
-          <FixtureList matches={matches ?? []} />
+          <SectionTitle index="04" title="All tournaments" />
+          <TournamentDirectory tournaments={tournaments ?? []} />
         </div>
       </main>
     </div>
@@ -284,14 +327,87 @@ function Field({
 const inputCls =
   "h-10 rounded-none border-border bg-[#0b1524] text-xs text-slate-200 placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30";
 
-// ---- 01 + 02: tournament creator & list ------------------------------------
+// ---- profile ---------------------------------------------------------------
 
-function TournamentCreator({
-  onCreated,
-}: {
-  defaultOvers?: number;
-  onCreated: (id: string) => void;
-}) {
+function ProfileCard() {
+  const { user } = useAuth();
+  const updateProfile = useMutation(api.users.updateProfile);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(user?.name ?? "");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await updateProfile({ name: name.trim() || undefined });
+      toast.success("Profile updated — organizers will see this name.");
+      setEditing(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border border-border bg-card p-4 panel-glow">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center bg-gradient-to-br from-[#22c55e] to-[#16a34a] text-base font-black text-[#052e16]">
+          {(user?.name ?? "P").charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <div className="flex items-center gap-1.5">
+              <Input
+                className="h-8 rounded-none border-border bg-[#0b1524] text-xs text-slate-200"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+              />
+              <Button
+                type="button"
+                disabled={busy}
+                className="h-8 shrink-0 rounded-none bg-[#22c55e] px-2 text-[9px] font-black uppercase tracking-widest text-[#052e16]"
+                onClick={save}
+              >
+                Save
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="truncate text-sm font-extrabold text-white">
+                {user?.name ?? "Player"}
+              </p>
+              <p className="score-nums truncate text-[10px] font-bold text-slate-500">
+                {user?.phone ?? ""}
+              </p>
+            </>
+          )}
+        </div>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => {
+              setName(user?.name ?? "");
+              setEditing(true);
+            }}
+            className="inline-flex shrink-0 items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
+          >
+            <Pencil className="size-3" /> Edit
+          </button>
+        )}
+      </div>
+      <p className="mt-3 border-t border-border pt-3 text-[10px] leading-relaxed text-slate-500">
+        Organizers add players by phone number — the name you set here is what
+        appears on their rosters.
+      </p>
+    </div>
+  );
+}
+
+// ---- 01: tournament creator ------------------------------------------------
+
+function TournamentCreator({ onCreated }: { onCreated: (id: string) => void }) {
   const create = useMutation(api.tournaments.create);
   const [name, setName] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
@@ -324,7 +440,7 @@ function TournamentCreator({
         defaultOvers,
         makeActive,
       });
-      toast.success("Tournament created.");
+      toast.success("Tournament created — you are the organizer.");
       onCreated(id as unknown as string);
       setName("");
       setCity("");
@@ -340,14 +456,14 @@ function TournamentCreator({
   return (
     <div className="border border-border bg-card p-4 panel-glow">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Tournament name" className="sm:col-span-1">
-          <Input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Village Premier League" />
+        <Field label="Tournament name">
+          <Input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Friends Premier League" />
         </Field>
         <Field label="Year">
           <Input className={inputCls} type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || new Date().getFullYear())} />
         </Field>
         <Field label="City / venue hub">
-          <Input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Peddapalli, Telangana" />
+          <Input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Hyderabad" />
         </Field>
         <Field label="Ball type">
           <Select value={ballType} onValueChange={(v) => setBallType(v as BallType)}>
@@ -374,7 +490,7 @@ function TournamentCreator({
           <Input className={inputCls} value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…" />
         </Field>
         <Field label="Description" className="sm:col-span-2">
-          <Input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Twelve clubs, one trophy…" />
+          <Input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Eight teams, one trophy…" />
         </Field>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -385,7 +501,7 @@ function TournamentCreator({
             onChange={(e) => setMakeActive(e.target.checked)}
             className="size-3.5 accent-[#22c55e]"
           />
-          Feature on landing page
+          Feature on the landing page
         </label>
         <Button
           type="button"
@@ -400,22 +516,22 @@ function TournamentCreator({
   );
 }
 
-function TournamentList({
+// ---- 02: my tournaments ----------------------------------------------------
+
+function MyTournamentList({
   tournaments,
   workingId,
   onSelect,
 }: {
-  tournaments: { id: string; name: string; year: number; status: string; teamsCount: number; matchesCount: number }[];
+  tournaments: TournamentRow[];
   workingId: string;
   onSelect: (id: string) => void;
 }) {
-  const setActive = useMutation(api.tournaments.setActive);
-
   return (
     <div className="divide-y divide-border/60 border border-border bg-card panel-glow">
       {tournaments.length === 0 && (
-        <p className="px-3 py-8 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
-          No tournaments yet — create the first one
+        <p className="px-3 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          You don't organize any tournament yet — create the first one above.
         </p>
       )}
       {tournaments.map((t) => (
@@ -436,20 +552,19 @@ function TournamentList({
               {t.status} · {t.teamsCount} teams · {t.matchesCount} matches
             </span>
           </button>
+          <Link
+            to={`/matches?tournament=${t.id}`}
+            className="text-[9px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
+          >
+            Public
+          </Link>
           <Button
             type="button"
             variant="outline"
             className="h-8 rounded-none border-border text-[9px] font-bold uppercase tracking-widest text-slate-300 hover:text-[#22c55e]"
-            onClick={async () => {
-              try {
-                await setActive({ tournamentId: t.id as Id<"tournaments"> });
-                toast.success(`${t.name} is now featured.`);
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Could not set active.");
-              }
-            }}
+            onClick={() => onSelect(t.id)}
           >
-            Feature
+            Manage
           </Button>
         </div>
       ))}
@@ -457,14 +572,192 @@ function TournamentList({
   );
 }
 
-// ---- 03: teams & rosters ---------------------------------------------------
+// ---- 04: tournament directory ----------------------------------------------
+
+function TournamentDirectory({ tournaments }: { tournaments: TournamentRow[] }) {
+  return (
+    <div className="divide-y divide-border/60 border border-border bg-card panel-glow">
+      {tournaments.length === 0 && (
+        <p className="px-3 py-10 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          No tournaments on the platform yet — be the first to create one.
+        </p>
+      )}
+      {tournaments.map((t) => (
+        <div key={t.id} className="flex items-center gap-3 px-3 py-2.5">
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-bold text-slate-100">
+              {t.name} <span className="text-slate-500">{t.year}</span>
+            </span>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              {t.status} · {t.teamsCount} teams · {t.matchesCount} matches
+            </span>
+          </span>
+          <StatusPill status={t.status as "UPCOMING" | "LIVE" | "COMPLETED"} />
+          <Link
+            to={`/matches?tournament=${t.id}`}
+            className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-[#22d3ee] hover:underline"
+          >
+            View <ArrowRight className="size-3" />
+          </Link>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- 03: manage panel ------------------------------------------------------
+
+function ManagePanel({
+  tournamentId,
+  teams,
+  players,
+  matches,
+  organizers,
+}: {
+  tournamentId: Id<"tournaments">;
+  teams: TeamDoc[];
+  players: PlayerDoc[];
+  matches: {
+    id: string;
+    status: "UPCOMING" | "LIVE" | "COMPLETED";
+    overs: number;
+    stage?: string;
+    startTime: number;
+    streamUrl?: string;
+    result?: string;
+    teamA?: { name: string; shortCode: string; color: string } | null;
+    teamB?: { name: string; shortCode: string; color: string } | null;
+  }[];
+  organizers: { id: string; name: string; phone: string; isCreator: boolean }[];
+}) {
+  return (
+    <div className="space-y-6">
+      <OrganizerManager tournamentId={tournamentId} organizers={organizers} />
+      <TeamManager tournamentId={tournamentId} teams={teams} players={players} />
+      <MatchScheduler tournamentId={tournamentId} teams={teams} />
+      <FixtureList matches={matches} />
+    </div>
+  );
+}
+
+function OrganizerManager({
+  tournamentId,
+  organizers,
+}: {
+  tournamentId: Id<"tournaments">;
+  organizers: { id: string; name: string; phone: string; isCreator: boolean }[];
+}) {
+  const addOrganizer = useMutation(api.tournaments.addOrganizer);
+  const removeOrganizer = useMutation(api.tournaments.removeOrganizer);
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    if (!phone.replace(/\D/g, "")) {
+      toast.error("Enter a phone number.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await addOrganizer({
+        tournamentId,
+        phone: phone.replace(/\D/g, ""),
+      });
+      toast.success("Co-organizer added — they can now manage and score.");
+      setPhone("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add organizer.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border border-border bg-card panel-glow">
+      <div className="flex items-center gap-2 border-b border-border bg-[#0b1524] px-3 py-2.5">
+        <Users className="size-3.5 text-[#22c55e]" />
+        <span className="text-sm font-extrabold uppercase tracking-tight text-white">
+          Organizers
+        </span>
+        <span className="micro-label ml-auto text-slate-500">
+          who can edit & score
+        </span>
+      </div>
+      <ul className="divide-y divide-border/60">
+        {organizers.length === 0 && (
+          <li className="px-3 py-6 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            Loading organizers…
+          </li>
+        )}
+        {organizers.map((o) => (
+          <li key={o.id} className="flex items-center gap-3 px-3 py-2">
+            <span className="flex size-7 shrink-0 items-center justify-center bg-[#22c55e]/15 text-[10px] font-black text-[#22c55e]">
+              {o.name.charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-bold text-slate-100">
+                {o.name}{" "}
+                {o.isCreator && (
+                  <span className="text-[9px] uppercase text-[#facc15]">· creator</span>
+                )}
+              </span>
+              <span className="score-nums block text-[10px] font-bold text-slate-500">{o.phone}</span>
+            </span>
+            {!o.isCreator && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await removeOrganizer({
+                      tournamentId,
+                      userId: o.id as Id<"users">,
+                    });
+                    toast.success("Co-organizer removed.");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Could not remove.");
+                  }
+                }}
+                className="text-slate-600 transition-colors hover:text-[#ef4444]"
+                title="Remove organizer"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+        <Input
+          className="h-9 rounded-none border-border bg-[#0b1524] text-[11px] text-slate-200"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Co-organizer phone number"
+          inputMode="tel"
+        />
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={add}
+          className="h-9 shrink-0 rounded-none bg-[#22c55e] px-3 text-[9px] font-black uppercase tracking-widest text-[#052e16] hover:bg-[#facc15]"
+        >
+          <Plus className="size-3" /> Add
+        </Button>
+      </div>
+      <p className="border-t border-border px-3 py-2 text-[9px] uppercase tracking-widest text-slate-600">
+        They must have signed in with that number first.
+      </p>
+    </div>
+  );
+}
+
+// ---- teams & rosters -------------------------------------------------------
 
 function TeamManager({
   tournamentId,
   teams,
   players,
 }: {
-  tournamentId: Id<"tournaments"> | "";
+  tournamentId: Id<"tournaments">;
   teams: TeamDoc[];
   players: PlayerDoc[];
 }) {
@@ -504,13 +797,7 @@ function TeamManager({
         </div>
       )}
 
-      {selectedTeam && (
-        <RosterEditor
-          team={selectedTeam}
-          squad={squad}
-          tournamentTeams={teams}
-        />
-      )}
+      {selectedTeam && <RosterEditor team={selectedTeam} squad={squad} />}
       {!selectedTeam && teams.length === 0 && (
         <p className="border border-border bg-card px-3 py-6 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
           Add a team above to start building a roster
@@ -524,7 +811,7 @@ function CreateTeamForm({
   tournamentId,
   onCreated,
 }: {
-  tournamentId: Id<"tournaments"> | "";
+  tournamentId: Id<"tournaments">;
   onCreated: (teamId: string) => void;
 }) {
   const create = useMutation(api.teams.create);
@@ -535,10 +822,6 @@ function CreateTeamForm({
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!tournamentId) {
-      toast.error("Select a tournament first.");
-      return;
-    }
     if (!name.trim() || !shortCode.trim()) {
       toast.error("Team name and short code are required.");
       return;
@@ -567,11 +850,11 @@ function CreateTeamForm({
   return (
     <div className="border border-border bg-card p-4 panel-glow">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Team name" className="sm:col-span-1">
-          <Input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Vasavi Warriors" />
+        <Field label="Team name">
+          <Input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sunrise Strikers" />
         </Field>
         <Field label="Short code">
-          <Input className={inputCls} value={shortCode} onChange={(e) => setShortCode(e.target.value)} placeholder="VW" maxLength={4} />
+          <Input className={inputCls} value={shortCode} onChange={(e) => setShortCode(e.target.value)} placeholder="SS" maxLength={4} />
         </Field>
         <Field label="Primary color">
           <div className="flex items-center gap-2">
@@ -592,7 +875,7 @@ function CreateTeamForm({
         type="button"
         className="mt-3 w-full rounded-none bg-[#22d3ee] text-[10px] font-black uppercase tracking-widest text-[#083344] hover:bg-[#facc15] hover:text-[#422006]"
         onClick={submit}
-        disabled={busy || !tournamentId}
+        disabled={busy}
       >
         <Plus className="size-3.5" /> Add team
       </Button>
@@ -600,19 +883,10 @@ function CreateTeamForm({
   );
 }
 
-function RosterEditor({
-  team,
-  squad,
-  tournamentTeams,
-}: {
-  team: TeamDoc;
-  squad: PlayerDoc[];
-  tournamentTeams: TeamDoc[];
-}) {
+function RosterEditor({ team, squad }: { team: TeamDoc; squad: PlayerDoc[] }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = squad.find((p) => p._id === editingId) ?? null;
-  const otherTeams = tournamentTeams.filter((t) => t._id !== team._id);
 
   return (
     <div className="border border-border bg-card panel-glow">
@@ -652,19 +926,8 @@ function RosterEditor({
         )}
       </div>
 
-      {adding && (
-        <PlayerForm
-          teamId={team._id}
-          onDone={() => setAdding(false)}
-        />
-      )}
-      {editing && (
-        <PlayerForm
-          teamId={team._id}
-          player={editing}
-          onDone={() => setEditingId(null)}
-        />
-      )}
+      {adding && <PlayerForm teamId={team._id} onDone={() => setAdding(false)} />}
+      {editing && <PlayerForm teamId={team._id} player={editing} onDone={() => setEditingId(null)} />}
 
       <ul className="divide-y divide-border/60">
         {squad.length === 0 && (
@@ -681,6 +944,7 @@ function RosterEditor({
               <span className="block truncate text-sm font-bold text-slate-100">{p.name}</span>
               <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
                 {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
+                {p.phone ? ` · ${p.phone}` : ""}
               </span>
             </span>
             <span className="shrink-0 bg-[#22c55e]/10 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[#22c55e]">
@@ -697,11 +961,6 @@ function RosterEditor({
           </li>
         ))}
       </ul>
-      {otherTeams.length > 0 && (
-        <p className="border-t border-border px-3 py-2 text-[9px] uppercase tracking-widest text-slate-600">
-          Tip: other squads — {otherTeams.map((t) => t.shortCode).join(", ")}
-        </p>
-      )}
     </div>
   );
 }
@@ -732,6 +991,7 @@ function RemovePlayer({ player }: { player: PlayerDoc }) {
   );
 }
 
+/** Enter a phone number → pull the player's account name (still editable). */
 function PlayerForm({
   teamId,
   player,
@@ -744,11 +1004,24 @@ function PlayerForm({
   const create = useMutation(api.players.create);
   const update = useMutation(api.players.update);
   const [name, setName] = useState(player?.name ?? "");
+  const [phone, setPhone] = useState(player?.phone ?? "");
+  const [nameEdited, setNameEdited] = useState(player != null);
   const [role, setRole] = useState<PlayerRole>(player?.role ?? "Batsman");
   const [battingStyle, setBattingStyle] = useState(player?.battingStyle ?? "");
   const [bowlingStyle, setBowlingStyle] = useState(player?.bowlingStyle ?? "");
   const [jersey, setJersey] = useState(player?.jerseyNumber ?? 0);
   const [busy, setBusy] = useState(false);
+
+  const digits = phone.replace(/\D/g, "");
+  const lookup = useQuery(
+    api.users.lookupByPhone,
+    digits.length >= 10 ? { phone: digits } : "skip",
+  );
+  useEffect(() => {
+    if (lookup && !nameEdited) {
+      setName(lookup.name);
+    }
+  }, [lookup, nameEdited]);
 
   const submit = async () => {
     if (!name.trim()) {
@@ -757,25 +1030,18 @@ function PlayerForm({
     }
     setBusy(true);
     try {
+      const common = {
+        phone: digits || undefined,
+        role,
+        battingStyle: battingStyle || undefined,
+        bowlingStyle: bowlingStyle || undefined,
+        jerseyNumber: jersey || undefined,
+      };
       if (player) {
-        await update({
-          playerId: player._id,
-          name: name.trim(),
-          role,
-          battingStyle: battingStyle || undefined,
-          bowlingStyle: bowlingStyle || undefined,
-          jerseyNumber: jersey || undefined,
-        });
+        await update({ playerId: player._id, name: name.trim(), ...common });
         toast.success("Player updated.");
       } else {
-        await create({
-          teamId,
-          name: name.trim(),
-          role,
-          battingStyle: battingStyle || undefined,
-          bowlingStyle: bowlingStyle || undefined,
-          jerseyNumber: jersey || undefined,
-        });
+        await create({ teamId, name: name.trim(), ...common });
         toast.success("Player added to the squad.");
       }
       onDone();
@@ -788,8 +1054,35 @@ function PlayerForm({
 
   return (
     <div className="grid gap-3 border-b border-border bg-[#0b1524]/60 px-3 py-3 sm:grid-cols-2">
+      <Field label="Phone number — pulls the name" className="sm:col-span-2">
+        <div className="flex items-center gap-2">
+          <Input
+            className={inputCls}
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setNameEdited(true);
+            }}
+            placeholder="98765 43210"
+            inputMode="tel"
+          />
+          {digits.length >= 10 && lookup === null && (
+            <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+              Not registered — type the name
+            </span>
+          )}
+        </div>
+      </Field>
       <Field label="Player name">
-        <Input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ravi Kumar" />
+        <Input
+          className={inputCls}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            setNameEdited(true);
+          }}
+          placeholder="Auto-fills from the number…"
+        />
       </Field>
       <Field label="Role">
         <Select value={role} onValueChange={(v) => setRole(v as PlayerRole)}>
@@ -846,13 +1139,13 @@ function PlayerForm({
   );
 }
 
-// ---- 04: match scheduler ----------------------------------------------------
+// ---- fixtures --------------------------------------------------------------
 
 function MatchScheduler({
   tournamentId,
   teams,
 }: {
-  tournamentId: Id<"tournaments"> | "";
+  tournamentId: Id<"tournaments">;
   teams: TeamDoc[];
 }) {
   const create = useMutation(api.matches.create);
@@ -867,10 +1160,6 @@ function MatchScheduler({
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!tournamentId) {
-      toast.error("Select a tournament first.");
-      return;
-    }
     if (!teamA || !teamB || teamA === teamB) {
       toast.error("Pick two different teams.");
       return;
@@ -946,7 +1235,7 @@ function MatchScheduler({
           </Select>
         </Field>
         <Field label="Venue">
-          <Input className={inputCls} value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Vasavi Ground, Peddapalli" />
+          <Input className={inputCls} value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="City ground" />
         </Field>
         <Field label="YouTube / Twitch stream URL (optional)">
           <Input className={inputCls} value={streamUrl} onChange={(e) => setStreamUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" />
@@ -962,15 +1251,13 @@ function MatchScheduler({
         type="button"
         className="mt-3 w-full rounded-none bg-[#facc15] text-[10px] font-black uppercase tracking-widest text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]"
         onClick={submit}
-        disabled={busy || !tournamentId}
+        disabled={busy}
       >
         <CalendarPlus className="size-3.5" /> Schedule fixture
       </Button>
     </div>
   );
 }
-
-// ---- 05: fixtures ----------------------------------------------------------
 
 function FixtureList({
   matches,
@@ -1021,7 +1308,7 @@ function FixtureList({
           <StatusPill status={m.status} />
           <div className="flex items-center gap-2">
             <Link
-              to={`/admin/scorer/${m.id}`}
+              to={`/scorer/${m.id}`}
               className="inline-flex items-center gap-1 bg-[#ef4444] px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#22c55e] hover:text-[#052e16]"
             >
               Score <ArrowRight className="size-3" />

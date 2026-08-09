@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { Link, useNavigate } from "react-router";
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { formatOvers } from "@/lib/vpl";
-import { LogIn, ShieldCheck } from "lucide-react";
+import { LogIn, Plus } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 // ---- live ticker (LED departure-board marquee) -----------------------------
@@ -60,7 +60,6 @@ const NAV = [
 export function SiteHeader() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const navigate = useNavigate();
-  const isAdmin = user?.role === "admin";
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-[#0b1524]/95 backdrop-blur">
@@ -90,22 +89,36 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           {!isLoading &&
             (isAuthenticated ? (
-              <Link
-                to="/admin"
-                className="inline-flex items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
-              >
-                <ShieldCheck className="size-3.5" />
-                {isAdmin ? "Admin" : "Console"}
-              </Link>
+              <>
+                <span className="micro-label hidden max-w-36 truncate text-slate-500 md:inline">
+                  {user?.name ?? "Signed in"}
+                </span>
+                <Link
+                  to="/dashboard"
+                  className="inline-flex items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                >
+                  <Plus className="size-3.5" />
+                  My Hub
+                </Link>
+              </>
             ) : (
-              <button
-                type="button"
-                onClick={() => navigate("/auth")}
-                className="inline-flex items-center gap-1.5 border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 transition-colors hover:border-[#22c55e] hover:text-white"
-              >
-                <LogIn className="size-3.5" />
-                Admin sign-in
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate("/auth")}
+                  className="inline-flex items-center gap-1.5 border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 transition-colors hover:border-[#22c55e] hover:text-white"
+                >
+                  <LogIn className="size-3.5" />
+                  Sign in
+                </button>
+                <Link
+                  to="/auth"
+                  className="inline-flex items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                >
+                  <Plus className="size-3.5" />
+                  Start a tournament
+                </Link>
+              </>
             ))}
         </div>
       </div>
@@ -122,10 +135,10 @@ export function SiteHeader() {
           </Link>
         ))}
         <Link
-          to={isAuthenticated ? "/admin" : "/auth"}
+          to={isAuthenticated ? "/dashboard" : "/auth"}
           className="micro-label shrink-0 text-[#22c55e]"
         >
-          {isAuthenticated ? "Admin" : "Sign in"}
+          {isAuthenticated ? "My Hub" : "Sign in"}
         </Link>
       </nav>
 
@@ -150,8 +163,8 @@ export function SiteFooter() {
             </span>
           </div>
           <p className="mt-3 max-w-xs text-xs leading-relaxed text-slate-500">
-            The community cricket broadcast platform — every village league,
-            scored ball by ball and streamed live to every phone in the crowd.
+            The community cricket broadcast platform — every league, scored
+            ball by ball and streamed live to every phone in the crowd.
           </p>
         </div>
         <div>
@@ -166,8 +179,9 @@ export function SiteFooter() {
         <div>
           <MicroLabel className="text-slate-500">Organizers</MicroLabel>
           <ul className="mt-3 space-y-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-            <li><Link className="transition-colors hover:text-[#22c55e]" to="/auth">Admin sign-in</Link></li>
-            <li><Link className="transition-colors hover:text-[#22c55e]" to="/admin">Organizer console</Link></li>
+            <li><Link className="transition-colors hover:text-[#22c55e]" to="/auth">Sign in with your number</Link></li>
+            <li><Link className="transition-colors hover:text-[#22c55e]" to="/dashboard">Start a tournament</Link></li>
+            <li><Link className="transition-colors hover:text-[#22c55e]" to="/tournaments">Find a league to score</Link></li>
           </ul>
         </div>
       </div>

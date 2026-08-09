@@ -135,13 +135,18 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+      phone: v.optional(v.string()), // canonical phone number — the login handle
+    })
+      .index("email", ["email"]) // index for the email. do not remove or modify
+      .index("by_phone", ["phone"]), // phone sign-in + roster autofill lookups
 
     // ------------------------------------------------------------------
     // CricPulse domain tables
     // ------------------------------------------------------------------
 
-    // tournaments — the platform hosts many of these (directory is public)
+    // tournaments — the platform hosts many of these (directory is public).
+    // `organizers` holds the users allowed to edit/score it; the creator is
+    // always the first entry and can add co-organizers by phone.
     tournaments: defineTable({
       name: v.string(),
       year: v.number(),
@@ -153,6 +158,7 @@ const schema = defineSchema(
       bannerUrl: v.optional(v.string()),
       defaultOvers: v.optional(v.number()), // default overs per match
       active: v.boolean(), // the featured tournament on the landing page
+      organizers: v.array(v.id("users")), // who may edit/score (creator first)
     }).index("by_active", ["active"]),
 
     // teams (id, tournament_id, team_name, logo_url)
@@ -164,10 +170,12 @@ const schema = defineSchema(
       logoUrl: v.optional(v.string()),
     }).index("by_tournament", ["tournamentId"]),
 
-    // players (id, team_id, name, role, styles, jersey)
+    // players (id, team_id, name, phone, role, styles, jersey). `phone` lets
+    // organizers pull a player's details straight from their account.
     players: defineTable({
       teamId: v.id("teams"),
       name: v.string(),
+      phone: v.optional(v.string()), // matches the account phone (auto-fill source)
       role: playerRoleValidator,
       battingStyle: v.optional(v.string()), // e.g. "Right-hand bat"
       bowlingStyle: v.optional(v.string()), // e.g. "Right-arm off spin"
