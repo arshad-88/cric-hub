@@ -106,6 +106,21 @@ export const matchStageValidator = v.union(
 );
 export type MatchStage = Infer<typeof matchStageValidator>;
 
+// ball types used across tournaments
+
+export const BALL_TYPE = {
+  GRACE: "Grace Ball",
+  LEATHER: "Leather",
+  TENNIS: "Tennis",
+} as const;
+
+export const ballTypeValidator = v.union(
+  v.literal(BALL_TYPE.GRACE),
+  v.literal(BALL_TYPE.LEATHER),
+  v.literal(BALL_TYPE.TENNIS),
+);
+export type BallType = Infer<typeof ballTypeValidator>;
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -123,15 +138,21 @@ const schema = defineSchema(
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // ------------------------------------------------------------------
-    // VPL CricHub domain tables
+    // CricPulse domain tables
     // ------------------------------------------------------------------
 
-    // tournaments (id, name, year, description)
+    // tournaments — the platform hosts many of these (directory is public)
     tournaments: defineTable({
       name: v.string(),
       year: v.number(),
       description: v.optional(v.string()),
-      active: v.boolean(), // the active tournament powers the public pages
+      city: v.optional(v.string()),
+      ballType: v.optional(ballTypeValidator),
+      startDate: v.optional(v.number()), // epoch ms
+      endDate: v.optional(v.number()),
+      bannerUrl: v.optional(v.string()),
+      defaultOvers: v.optional(v.number()), // default overs per match
+      active: v.boolean(), // the featured tournament on the landing page
     }).index("by_active", ["active"]),
 
     // teams (id, tournament_id, team_name, logo_url)
@@ -140,13 +161,17 @@ const schema = defineSchema(
       name: v.string(),
       shortCode: v.string(), // e.g. "VW"
       color: v.string(), // hex accent for identity blocks
+      logoUrl: v.optional(v.string()),
     }).index("by_tournament", ["tournamentId"]),
 
-    // players (id, team_id, name, role)
+    // players (id, team_id, name, role, styles, jersey)
     players: defineTable({
       teamId: v.id("teams"),
       name: v.string(),
       role: playerRoleValidator,
+      battingStyle: v.optional(v.string()), // e.g. "Right-hand bat"
+      bowlingStyle: v.optional(v.string()), // e.g. "Right-arm off spin"
+      jerseyNumber: v.optional(v.number()),
     }).index("by_team", ["teamId"]),
 
     // matches (id, tournament_id, team_a_id, team_b_id, status, toss, overs, stream_url)

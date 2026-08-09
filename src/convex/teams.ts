@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { getActiveTournament, requireAdmin } from "./helpers";
@@ -9,13 +10,28 @@ export const listActive = query({
   handler: async (ctx) => {
     const tournament = await getActiveTournament(ctx);
     if (!tournament) return [];
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-    return teams.sort((a, b) => a.name.localeCompare(b.name));
+    return await listByTournamentId(ctx, tournament._id);
   },
 });
+
+/** Teams of any tournament (public) — powers the tournament pages. */
+export const listByTournament = query({
+  args: { tournamentId: v.id("tournaments") },
+  handler: async (ctx, { tournamentId }) => {
+    return await listByTournamentId(ctx, tournamentId);
+  },
+});
+
+async function listByTournamentId(
+  ctx: QueryCtx,
+  tournamentId: Id<"tournaments">,
+) {
+  const teams = await ctx.db
+    .query("teams")
+    .withIndex("by_tournament", (q) => q.eq("tournamentId", tournamentId))
+    .collect();
+  return teams.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export const get = query({
   args: { teamId: v.id("teams") },
@@ -74,29 +90,25 @@ export const getDetail = query({
   },
 });
 
-/** Admin: create a team under a tournament (defaults to the active one). */
+/** Admin: create a team under a specific tournament. */
 export const create = mutation({
   args: {
     name: v.string(),
     shortCode: v.string(),
     color: v.string(),
-    tournamentId: v.optional(v.id("tournaments")),
+    logoUrl: v.optional(v.string()),
+    tournamentId: v.id("tournaments"),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    let tournamentId = args.tournamentId;
-    if (!tournamentId) {
-      const active = await getActiveTournament(ctx);
-      if (!active) {
-        throw new Error("No active tournament — create a tournament first.");
-      }
-      tournamentId = active._id;
-    }
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) throw new Error("Tournament not found.");
     return await ctx.db.insert("teams", {
-      tournamentId,
+      tournamentId: args.tournamentId,
       name: args.name,
       shortCode: args.shortCode.toUpperCase().slice(0, 4),
       color: args.color,
+      logoUrl: args.logoUrl,
     });
   },
 });

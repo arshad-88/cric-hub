@@ -30,19 +30,64 @@ export const listByTournament = query({
   },
 });
 
-/** Admin: add a player to a squad. */
+/** Admin: add a player to a squad (with styles + jersey number). */
 export const create = mutation({
   args: {
     teamId: v.id("teams"),
     name: v.string(),
     role: playerRoleValidator,
+    battingStyle: v.optional(v.string()),
+    bowlingStyle: v.optional(v.string()),
+    jerseyNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
+    const team = await ctx.db.get(args.teamId);
+    if (!team) throw new Error("Team not found.");
     return await ctx.db.insert("players", {
       teamId: args.teamId,
       name: args.name,
       role: args.role,
+      battingStyle: args.battingStyle,
+      bowlingStyle: args.bowlingStyle,
+      jerseyNumber: args.jerseyNumber,
     });
+  },
+});
+
+/** Admin: edit a player's details. */
+export const update = mutation({
+  args: {
+    playerId: v.id("players"),
+    name: v.optional(v.string()),
+    role: v.optional(playerRoleValidator),
+    battingStyle: v.optional(v.string()),
+    bowlingStyle: v.optional(v.string()),
+    jerseyNumber: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const player = await ctx.db.get(args.playerId);
+    if (!player) throw new Error("Player not found.");
+    await ctx.db.patch(args.playerId, {
+      name: args.name ?? player.name,
+      role: args.role ?? player.role,
+      battingStyle: args.battingStyle !== undefined ? args.battingStyle : player.battingStyle,
+      bowlingStyle: args.bowlingStyle !== undefined ? args.bowlingStyle : player.bowlingStyle,
+      jerseyNumber: args.jerseyNumber !== undefined ? args.jerseyNumber : player.jerseyNumber,
+    });
+    return args.playerId;
+  },
+});
+
+/** Admin: remove a player from a squad. */
+export const remove = mutation({
+  args: { playerId: v.id("players") },
+  handler: async (ctx, { playerId }) => {
+    await requireAdmin(ctx);
+    const player = await ctx.db.get(playerId);
+    if (!player) throw new Error("Player not found.");
+    await ctx.db.delete(playerId);
+    return playerId;
   },
 });

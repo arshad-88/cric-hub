@@ -45,6 +45,14 @@ export interface BowlerView {
   econ: number;
 }
 
+export interface OverView {
+  over: number;
+  runs: number;
+  wickets: number;
+  legalBalls: number;
+  balls: { symbol: string; kind: BallKind }[];
+}
+
 export interface InningsView {
   id: string;
   number: number;
@@ -62,6 +70,7 @@ export interface InningsView {
   bowlers: BowlerView[];
   recentBalls: BallView[];
   commentary: BallView[];
+  overs: OverView[];
   extras: { total: number; wide: number; noball: number; bye: number; legbye: number };
   isCurrent: boolean;
   isComplete: boolean;
@@ -93,6 +102,26 @@ export interface Scorecard {
   live: boolean;
 }
 
+export type TournamentStatus = "ACTIVE" | "UPCOMING" | "PAST";
+
+export interface TournamentLite {
+  id: string;
+  name: string;
+  year: number;
+  description?: string;
+  city?: string;
+  ballType?: string;
+  startDate?: number;
+  endDate?: number;
+  bannerUrl?: string;
+  active: boolean;
+  status: TournamentStatus;
+  teamsCount: number;
+  matchesCount: number;
+  completedCount: number;
+  liveMatchId?: string;
+}
+
 export interface MatchRow {
   id: string;
   status: "UPCOMING" | "LIVE" | "COMPLETED";
@@ -102,7 +131,7 @@ export interface MatchRow {
   startTime: number;
   streamUrl?: string;
   result?: string;
-  inningsSummary?: string;
+  inningsSummary?: string | null;
   teamA?: TeamLite | null;
   teamB?: TeamLite | null;
 }

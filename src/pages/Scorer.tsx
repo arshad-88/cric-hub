@@ -48,11 +48,11 @@ const WICKET_TYPES: WicketType[] = ["Bowled", "Caught", "Run out", "Stumped", "L
 
 export default function Scorer() {
   const { matchId } = useParams<{ matchId: string }>();
-  const scorecard = useQuery(api.scorecard.get, matchId ? { matchId } : "skip");
+  const scorecard = useQuery(api.scorecard.get, matchId ? { matchId: matchId as Id<"matches"> } : "skip");
 
   const current = scorecard?.currentInnings ?? null;
-  const battingTeamId = current?.battingTeam.id;
-  const bowlingTeamId = current?.bowlingTeam.id;
+  const battingTeamId = current?.battingTeam._id as Id<"teams"> | undefined;
+  const bowlingTeamId = current?.bowlingTeam._id as Id<"teams"> | undefined;
   const battingSquad = useQuery(
     api.players.listByTeam,
     battingTeamId ? { teamId: battingTeamId } : "skip",
@@ -77,12 +77,12 @@ export default function Scorer() {
   const [streamUrl, setStreamUrl] = useState("");
 
   if (scorecard === undefined) {
-    return <ScorerShell><div className="h-10 w-10 animate-spin border-2 border-foreground border-t-transparent" /></ScorerShell>;
+    return <ScorerShell><div className="h-10 w-10 animate-spin border-2 border-[#22c55e] border-t-transparent" /></ScorerShell>;
   }
   if (scorecard === null) {
     return (
       <ScorerShell>
-        <p className="border border-foreground bg-white px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-foreground/40">
+        <p className="border border-border bg-card px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-slate-500">
           Match not found
         </p>
       </ScorerShell>
@@ -111,11 +111,11 @@ export default function Scorer() {
     setBusy(true);
     try {
       await record({
-        matchId: match.id,
-        inningsId: current.id,
-        bowlerId: bowler._id,
-        batsmanId: striker._id,
-        nonStrikerId: nonStriker?._id,
+        matchId: match.id as Id<"matches">,
+        inningsId: current.id as Id<"innings">,
+        bowlerId: bowler._id as Id<"players">,
+        batsmanId: striker._id as Id<"players">,
+        nonStrikerId: nonStriker?._id as Id<"players"> | undefined,
         runsScored: runs,
         extraType: "none",
         extraRuns: 0,
@@ -132,7 +132,10 @@ export default function Scorer() {
     if (!current) return;
     setBusy(true);
     try {
-      const res = await undo({ matchId: match.id, inningsId: current.id });
+      const res = await undo({
+        matchId: match.id as Id<"matches">,
+        inningsId: current.id as Id<"innings">,
+      });
       toast.success(res.reset ? "Innings reset." : "Last ball undone.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not undo.");
@@ -146,9 +149,9 @@ export default function Scorer() {
     if (!current || !striker || !nonStriker) return;
     try {
       await setBatsmen({
-        inningsId: current.id,
-        strikerId: nonStriker._id,
-        nonStrikerId: striker._id,
+        inningsId: current.id as Id<"innings">,
+        strikerId: nonStriker._id as Id<"players">,
+        nonStrikerId: striker._id as Id<"players">,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not swap strike.");
@@ -158,7 +161,10 @@ export default function Scorer() {
   const handleSaveStream = async () => {
     setBusy(true);
     try {
-      await updateStream({ matchId: match.id, streamUrl: streamUrl.trim() });
+      await updateStream({
+        matchId: match.id as Id<"matches">,
+        streamUrl: streamUrl.trim(),
+      });
       toast.success("Stream link updated — viewers see it instantly.");
       setStreamOpen(false);
     } catch (e) {
@@ -171,48 +177,54 @@ export default function Scorer() {
   return (
     <ScorerShell>
       {/* header */}
-      <div className="flex items-center justify-between gap-3 border-b border-foreground bg-foreground px-4 py-3 text-white">
-        <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-[#0b1524] px-4 py-3">
+        <Link to="/admin" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
           <ArrowLeft className="size-3.5" /> Console
         </Link>
-        <span className="truncate text-xs font-extrabold uppercase tracking-tight">
+        <span className="truncate text-xs font-extrabold uppercase tracking-tight text-white">
           {teamA.shortCode} v {teamB.shortCode}
+          <span className="ml-2 inline-flex items-center gap-1 text-[#ef4444]">
+            <span className="live-dot relative flex size-1.5">
+              <span className="relative inline-flex size-1.5 rounded-full bg-[#ef4444]" />
+            </span>
+            Scorer
+          </span>
         </span>
-        <Link to={`/matches/${match.id}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#E4002B] hover:text-white">
+        <Link to={`/matches/${match.id}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#22c55e] hover:text-white">
           Public <ArrowLeftRight className="size-3.5" />
         </Link>
       </div>
 
       {/* score strip */}
-      <div className="border-b border-foreground bg-white px-4 py-3">
+      <div className="border-b border-border bg-card px-4 py-3 panel-glow">
         {match.result ? (
-          <p className="text-sm font-extrabold uppercase tracking-wide text-[#E4002B]">{match.result}</p>
+          <p className="text-sm font-extrabold uppercase tracking-wide text-[#22c55e]">{match.result}</p>
         ) : current ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="score-nums text-xl font-extrabold">
+            <p className="score-nums text-xl font-extrabold text-white">
               {current.battingTeam.shortCode}{" "}
               {current.totalRuns}/{current.wickets}
-              <span className="ml-1.5 text-xs font-bold text-foreground/50">
+              <span className="ml-1.5 text-xs font-bold text-slate-400">
                 ({formatOvers(current.ballsBowled)} ov)
               </span>
             </p>
-            <div className="flex items-center gap-3 score-nums text-[11px] font-bold text-foreground/60">
-              {current.target != null && <span>Target {current.target}</span>}
+            <div className="flex items-center gap-3 score-nums text-[11px] font-bold text-slate-400">
+              {current.target != null && <span className="text-[#facc15]">Target {current.target}</span>}
               <span>CRR {current.crr}</span>
-              {current.rrr != null && <span>RRR {current.rrr}</span>}
+              {current.rrr != null && <span className="text-[#22d3ee]">RRR {current.rrr}</span>}
             </div>
           </div>
         ) : (
-          <p className="text-sm font-extrabold uppercase tracking-wide">Upcoming fixture</p>
+          <p className="text-sm font-extrabold uppercase tracking-wide text-slate-400">Upcoming fixture</p>
         )}
       </div>
 
       {/* main */}
       <div className="mx-auto w-full max-w-md flex-1 px-4 py-4">
         {matchOver && (
-          <div className="mb-4 border-2 border-[#E4002B] bg-white p-4 text-center">
-            <MicroLabel className="text-[#E4002B]">Match complete</MicroLabel>
-            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-foreground/60">
+          <div className="mb-4 border-2 border-[#22c55e] bg-card p-4 text-center panel-glow">
+            <MicroLabel className="text-[#22c55e]">Match complete</MicroLabel>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-500">
               Well scored, scorer.
             </p>
           </div>
@@ -229,25 +241,25 @@ export default function Scorer() {
         {!needsStart && !needsOpeners && current && (
           <>
             {/* crease */}
-            <div className="grid grid-cols-3 gap-px border border-foreground bg-foreground">
-              <div className="bg-white px-3 py-3">
-                <MicroLabel className="text-[#002FA7]">Striker</MicroLabel>
-                <p className="mt-1 truncate text-sm font-extrabold">{strikerCard?.name ?? striker?.name ?? "—"}</p>
-                <p className="score-nums text-[11px] font-bold text-foreground/55">
+            <div className="grid grid-cols-3 gap-px border border-border bg-border">
+              <div className="bg-card px-3 py-3">
+                <MicroLabel className="text-[#22c55e]">Striker</MicroLabel>
+                <p className="mt-1 truncate text-sm font-extrabold text-white">{strikerCard?.name ?? striker?.name ?? "—"}</p>
+                <p className="score-nums text-[11px] font-bold text-slate-400">
                   {strikerCard ? `${strikerCard.runs} (${strikerCard.balls}) · ${strikerCard.sr} SR` : "—"}
                 </p>
               </div>
-              <div className="bg-white px-3 py-3">
-                <MicroLabel className="text-foreground/50">Non-striker</MicroLabel>
-                <p className="mt-1 truncate text-sm font-extrabold">{nonStrikerCard?.name ?? nonStriker?.name ?? "—"}</p>
-                <p className="score-nums text-[11px] font-bold text-foreground/55">
+              <div className="bg-card px-3 py-3">
+                <MicroLabel className="text-slate-500">Non-striker</MicroLabel>
+                <p className="mt-1 truncate text-sm font-extrabold text-white">{nonStrikerCard?.name ?? nonStriker?.name ?? "—"}</p>
+                <p className="score-nums text-[11px] font-bold text-slate-400">
                   {nonStrikerCard ? `${nonStrikerCard.runs} (${nonStrikerCard.balls})` : "—"}
                 </p>
               </div>
-              <div className="bg-white px-3 py-3">
-                <MicroLabel className="text-[#E4002B]">Bowler</MicroLabel>
-                <p className="mt-1 truncate text-sm font-extrabold">{bowler?.name ?? "—"}</p>
-                <p className="score-nums text-[11px] font-bold text-foreground/55">
+              <div className="bg-card px-3 py-3">
+                <MicroLabel className="text-[#22d3ee]">Bowler</MicroLabel>
+                <p className="mt-1 truncate text-sm font-extrabold text-white">{bowler?.name ?? "—"}</p>
+                <p className="score-nums text-[11px] font-bold text-slate-400">
                   {bowlerCard ? `${bowlerCard.overs}-${bowlerCard.maidens}-${bowlerCard.runs}-${bowlerCard.wickets}` : "—"}
                 </p>
               </div>
@@ -256,18 +268,18 @@ export default function Scorer() {
             {/* over + quick actions */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {newOver ? (
-                <span className="inline-flex items-center gap-2 border-2 border-[#E4002B] bg-white px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[#E4002B]">
+                <span className="inline-flex items-center gap-2 border-2 border-[#facc15] bg-[#422006] px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[#facc15] glow-gold">
                   New over — set bowler <Check className="size-3.5" />
                 </span>
               ) : (
-                <span className="score-nums border border-foreground bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-foreground/60">
+                <span className="score-nums border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                   Over {current.oversLabel} · {6 - (current.ballsBowled % 6 || 6)} balls left
                 </span>
               )}
               <button
                 type="button"
                 onClick={() => setBowlerOpen(true)}
-                className="border border-foreground bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-foreground hover:text-white"
+                className="border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 hover:border-[#22d3ee] hover:text-[#22d3ee]"
               >
                 Change bowler
               </button>
@@ -275,7 +287,7 @@ export default function Scorer() {
                 type="button"
                 onClick={handleSwap}
                 disabled={!striker || !nonStriker}
-                className="border border-foreground bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-foreground hover:text-white disabled:opacity-40"
+                className="border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 hover:border-[#22c55e] hover:text-[#22c55e] disabled:opacity-40"
               >
                 Swap strike
               </button>
@@ -292,8 +304,8 @@ export default function Scorer() {
                   className={cn(
                     "score-nums py-5 text-2xl font-extrabold transition-transform active:scale-95",
                     r === 4 || r === 6
-                      ? "bg-[#002FA7] text-white hover:bg-[#002FA7]/85"
-                      : "bg-foreground text-white hover:bg-black/80",
+                      ? "bg-[#22c55e] text-[#052e16] glow-green hover:bg-[#4ade80]"
+                      : "bg-[#0b1524] text-white hover:bg-slate-800",
                   )}
                 >
                   {r}
@@ -303,7 +315,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setWicketOpen(true)}
-                className="score-nums bg-[#E4002B] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 hover:bg-[#E4002B]/85"
+                className="score-nums bg-[#ef4444] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626]"
               >
                 W
               </button>
@@ -311,7 +323,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setExtraOpen("wide")}
-                className="border-2 border-[#E4002B] bg-white text-sm font-extrabold text-[#E4002B] transition-transform active:scale-95"
+                className="border-2 border-[#facc15] bg-[#422006] text-sm font-extrabold text-[#facc15] transition-transform active:scale-95"
               >
                 WD
               </button>
@@ -319,7 +331,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setExtraOpen("noball")}
-                className="border-2 border-[#002FA7] bg-white text-sm font-extrabold text-[#002FA7] transition-transform active:scale-95"
+                className="border-2 border-[#22d3ee] bg-[#083344] text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95"
               >
                 NB
               </button>
@@ -327,7 +339,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setExtraOpen("bye")}
-                className="border border-foreground bg-white text-sm font-extrabold text-foreground transition-transform active:scale-95"
+                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95"
               >
                 BYE
               </button>
@@ -335,7 +347,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setExtraOpen("legbye")}
-                className="border border-foreground bg-white text-sm font-extrabold text-foreground transition-transform active:scale-95"
+                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95"
               >
                 LB
               </button>
@@ -343,7 +355,7 @@ export default function Scorer() {
                 type="button"
                 disabled={busy}
                 onClick={() => setUndoOpen(true)}
-                className="col-span-2 flex items-center justify-center gap-1.5 border border-foreground bg-muted py-3 text-[11px] font-extrabold uppercase tracking-widest text-foreground transition-transform active:scale-95 hover:bg-foreground hover:text-white"
+                className="col-span-2 flex items-center justify-center gap-1.5 border border-border bg-card py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-300 transition-transform active:scale-95 hover:border-[#ef4444] hover:text-[#ef4444]"
               >
                 <RotateCcw className="size-4" /> Undo
               </button>
@@ -353,18 +365,18 @@ export default function Scorer() {
                   setStreamUrl(match.streamUrl ?? "");
                   setStreamOpen(true);
                 }}
-                className="col-span-2 flex items-center justify-center gap-1.5 border border-foreground bg-white py-3 text-[11px] font-extrabold uppercase tracking-widest hover:bg-[#002FA7] hover:text-white"
+                className="col-span-2 flex items-center justify-center gap-1.5 border border-border bg-card py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-300 transition-transform active:scale-95 hover:border-[#22d3ee] hover:text-[#22d3ee]"
               >
                 <Video className="size-4" /> Stream
               </button>
             </div>
 
             {/* recent balls */}
-            <div className="mt-4 border border-foreground bg-white px-3 py-2.5">
-              <MicroLabel className="mb-2 block text-foreground/50">Last balls</MicroLabel>
+            <div className="mt-4 border border-border bg-card px-3 py-2.5">
+              <MicroLabel className="mb-2 block text-slate-500">Last balls</MicroLabel>
               <div className="flex flex-wrap items-center gap-1.5">
                 {current.recentBalls.length === 0 ? (
-                  <span className="text-[11px] font-medium text-foreground/40">No balls yet</span>
+                  <span className="text-[11px] font-medium text-slate-600">No balls yet</span>
                 ) : (
                   current.recentBalls.map((b) => <BallChip key={b.key} symbol={b.symbol} kind={b.kind} size="sm" />)
                 )}
@@ -386,19 +398,19 @@ export default function Scorer() {
             setBusy(true);
             try {
               await record({
-                matchId: match.id,
-                inningsId: current.id,
-                bowlerId: bowler?._id ?? payload.bowlerId,
-                batsmanId: payload.dismissedBatterId,
-                nonStrikerId: nonStriker?._id,
+                matchId: match.id as Id<"matches">,
+                inningsId: current.id as Id<"innings">,
+                bowlerId: (bowler?._id ?? payload.bowlerId) as Id<"players">,
+                batsmanId: payload.dismissedBatterId as Id<"players">,
+                nonStrikerId: nonStriker?._id as Id<"players"> | undefined,
                 runsScored: 0,
                 extraType: "none",
                 extraRuns: 0,
                 isWicket: true,
                 wicketType: payload.wicketType,
-                dismissedBatterId: payload.dismissedBatterId,
-                fielderId: payload.fielderId,
-                newBatsmanId: payload.newBatsmanId,
+                dismissedBatterId: payload.dismissedBatterId as Id<"players">,
+                fielderId: payload.fielderId as Id<"players"> | undefined,
+                newBatsmanId: payload.newBatsmanId as Id<"players">,
               });
               toast.success("Wicket recorded.");
               setWicketOpen(false);
@@ -419,11 +431,11 @@ export default function Scorer() {
             setBusy(true);
             try {
               await record({
-                matchId: match.id,
-                inningsId: current.id,
-                bowlerId: bowler?._id ?? "",
-                batsmanId: striker?._id ?? "",
-                nonStrikerId: nonStriker?._id,
+                matchId: match.id as Id<"matches">,
+                inningsId: current.id as Id<"innings">,
+                bowlerId: (bowler?._id ?? "") as Id<"players">,
+                batsmanId: (striker?._id ?? "") as Id<"players">,
+                nonStrikerId: nonStriker?._id as Id<"players"> | undefined,
                 runsScored,
                 extraType: extraOpen,
                 extraRuns,
@@ -441,20 +453,20 @@ export default function Scorer() {
 
       {undoOpen && current && (
         <Dialog open onOpenChange={(o) => !o && setUndoOpen(false)}>
-          <DialogContent className="rounded-none sm:max-w-sm">
+          <DialogContent className="rounded-none border-border sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle className="uppercase">Undo last ball?</DialogTitle>
+              <DialogTitle className="uppercase text-white">Undo last ball?</DialogTitle>
               <DialogDescription>
                 Removes the most recent ball of this innings. Use it to fix scorer
                 entry errors.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" className="rounded-none uppercase" onClick={() => setUndoOpen(false)}>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={() => setUndoOpen(false)}>
                 Keep it
               </Button>
               <Button
-                className="rounded-none bg-[#E4002B] uppercase text-white hover:bg-foreground"
+                className="rounded-none bg-[#ef4444] uppercase text-white hover:bg-[#dc2626]"
                 onClick={handleUndo}
                 disabled={busy}
               >
@@ -467,9 +479,9 @@ export default function Scorer() {
 
       {bowlerOpen && current && (
         <Dialog open onOpenChange={(o) => !o && setBowlerOpen(false)}>
-          <DialogContent className="rounded-none sm:max-w-sm">
+          <DialogContent className="rounded-none border-border sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle className="uppercase">Change bowler</DialogTitle>
+              <DialogTitle className="uppercase text-white">Change bowler</DialogTitle>
               <DialogDescription>Pick the bowler for the current over.</DialogDescription>
             </DialogHeader>
             <BowlerPicker
@@ -478,7 +490,10 @@ export default function Scorer() {
               onPick={async (playerId) => {
                 setBusy(true);
                 try {
-                  await setBowlerM({ inningsId: current.id, bowlerId: playerId });
+                  await setBowlerM({
+                    inningsId: current.id as Id<"innings">,
+                    bowlerId: playerId as Id<"players">,
+                  });
                   setBowlerOpen(false);
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : "Could not change the bowler.");
@@ -493,10 +508,10 @@ export default function Scorer() {
 
       {streamOpen && (
         <Dialog open onOpenChange={(o) => !o && setStreamOpen(false)}>
-          <DialogContent className="rounded-none sm:max-w-sm">
+          <DialogContent className="rounded-none border-border sm:max-w-sm">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 uppercase">
-                <Clapperboard className="size-4" /> Live stream link
+              <DialogTitle className="flex items-center gap-2 uppercase text-white">
+                <Clapperboard className="size-4 text-[#22d3ee]" /> Live stream link
               </DialogTitle>
               <DialogDescription>
                 YouTube ID/URL or Twitch channel URL — updates the public match
@@ -504,16 +519,16 @@ export default function Scorer() {
               </DialogDescription>
             </DialogHeader>
             <Input
-              className="rounded-none"
+              className="rounded-none border-border bg-[#0b1524] text-slate-200"
               value={streamUrl}
               onChange={(e) => setStreamUrl(e.target.value)}
               placeholder="https://www.youtube.com/watch?v=…"
             />
             <DialogFooter>
-              <Button variant="outline" className="rounded-none uppercase" onClick={() => setStreamOpen(false)}>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={() => setStreamOpen(false)}>
                 Cancel
               </Button>
-              <Button className="rounded-none bg-[#002FA7] uppercase text-white hover:bg-foreground" onClick={handleSaveStream} disabled={busy}>
+              <Button className="rounded-none bg-[#22d3ee] uppercase text-[#083344] hover:bg-[#22c55e] hover:text-[#052e16]" onClick={handleSaveStream} disabled={busy}>
                 Save stream
               </Button>
             </DialogFooter>
@@ -528,7 +543,7 @@ export default function Scorer() {
 
 function ScorerShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen flex-col bg-muted/40 text-foreground">
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
       {children}
     </main>
   );
@@ -540,8 +555,8 @@ function StartInningsPanel({
   teamB,
 }: {
   matchId: string;
-  teamA: { id: string; name: string; shortCode: string };
-  teamB: { id: string; name: string; shortCode: string };
+  teamA: { _id: string; name: string; shortCode: string };
+  teamB: { _id: string; name: string; shortCode: string };
 }) {
   const startInnings = useMutation(api.scoring.startInnings);
   const [battingId, setBattingId] = useState<string>("");
@@ -549,9 +564,9 @@ function StartInningsPanel({
   const [nonStriker, setNonStriker] = useState("");
   const [bowler, setBowler] = useState("");
   const [busy, setBusy] = useState(false);
-  const battingSquad = useQuery(api.players.listByTeam, battingId ? { teamId: battingId } : "skip");
-  const bowlingId = battingId ? (battingId === teamA.id ? teamB.id : teamA.id) : "";
-  const bowlingSquad = useQuery(api.players.listByTeam, bowlingId ? { teamId: bowlingId } : "skip");
+  const battingSquad = useQuery(api.players.listByTeam, battingId ? { teamId: battingId as Id<"teams"> } : "skip");
+  const bowlingId = battingId ? (battingId === teamA._id ? teamB._id : teamA._id) : "";
+  const bowlingSquad = useQuery(api.players.listByTeam, bowlingId ? { teamId: bowlingId as Id<"teams"> } : "skip");
 
   const submit = async () => {
     if (!battingId || !striker || !nonStriker || !bowler) {
@@ -561,12 +576,12 @@ function StartInningsPanel({
     setBusy(true);
     try {
       const res = await startInnings({
-        matchId,
-        battingTeamId: battingId,
-        bowlingTeamId: bowlingId,
-        strikerId: striker,
-        nonStrikerId: nonStriker,
-        bowlerId: bowler,
+        matchId: matchId as Id<"matches">,
+        battingTeamId: battingId as Id<"teams">,
+        bowlingTeamId: bowlingId as Id<"teams">,
+        strikerId: striker as Id<"players">,
+        nonStrikerId: nonStriker as Id<"players">,
+        bowlerId: bowler as Id<"players">,
       });
       toast.success(res.number === 1 ? "1st innings underway!" : "2nd innings underway!");
     } catch (e) {
@@ -577,27 +592,27 @@ function StartInningsPanel({
   };
 
   return (
-    <div className="border-2 border-[#E4002B] bg-white p-4">
-      <MicroLabel className="text-[#E4002B]">Start innings</MicroLabel>
-      <p className="mt-1 text-xs text-foreground/60">
+    <div className="border-2 border-[#22c55e] bg-card p-4 panel-glow">
+      <MicroLabel className="text-[#22c55e]">Start innings</MicroLabel>
+      <p className="mt-1 text-xs text-slate-500">
         Who bats first? Pick the opening pair and the first bowler.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {[teamA, teamB].map((t) => (
           <button
-            key={t.id}
+            key={t._id}
             type="button"
             onClick={() => {
-              setBattingId(t.id);
+              setBattingId(t._id);
               setStriker("");
               setNonStriker("");
               setBowler("");
             }}
             className={cn(
               "border px-3 py-3 text-xs font-extrabold uppercase tracking-wide",
-              battingId === t.id
-                ? "border-[#E4002B] bg-[#E4002B] text-white"
-                : "border-foreground bg-white text-foreground",
+              battingId === t._id
+                ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]"
+                : "border-border bg-card text-slate-300",
             )}
           >
             {t.name} bat
@@ -615,7 +630,7 @@ function StartInningsPanel({
             type="button"
             onClick={submit}
             disabled={busy}
-            className="w-full rounded-none bg-[#E4002B] uppercase text-white hover:bg-foreground"
+            className="w-full rounded-none bg-[#22c55e] uppercase text-[#052e16] hover:bg-[#facc15] hover:text-[#422006]"
           >
             Start match &amp; score
           </Button>
@@ -648,7 +663,12 @@ function OpenersPanel({
     }
     setBusy(true);
     try {
-      await setOpeners({ inningsId, strikerId: striker, nonStrikerId: nonStriker, bowlerId: bowler });
+      await setOpeners({
+        inningsId: inningsId as Id<"innings">,
+        strikerId: striker as Id<"players">,
+        nonStrikerId: nonStriker as Id<"players">,
+        bowlerId: bowler as Id<"players">,
+      });
       toast.success("Crease set — start scoring!");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not set the crease.");
@@ -658,9 +678,9 @@ function OpenersPanel({
   };
 
   return (
-    <div className="border-2 border-[#002FA7] bg-white p-4">
-      <MicroLabel className="text-[#002FA7]">Set the crease</MicroLabel>
-      <p className="mt-1 text-xs text-foreground/60">
+    <div className="border-2 border-[#22d3ee] bg-card p-4 panel-glow">
+      <MicroLabel className="text-[#22d3ee]">Set the crease</MicroLabel>
+      <p className="mt-1 text-xs text-slate-500">
         New innings — pick the openers and the first bowler.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -674,7 +694,7 @@ function OpenersPanel({
         type="button"
         onClick={submit}
         disabled={busy}
-        className="mt-3 w-full rounded-none bg-[#002FA7] uppercase text-white hover:bg-foreground"
+        className="mt-3 w-full rounded-none bg-[#22d3ee] uppercase text-[#083344] hover:bg-[#22c55e] hover:text-[#052e16]"
       >
         Set &amp; start scoring
       </Button>
@@ -695,12 +715,12 @@ function Picker({
 }) {
   return (
     <div>
-      <Label className="text-[9px] font-bold uppercase tracking-widest text-foreground/50">{label}</Label>
+      <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{label}</Label>
       <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger className="mt-1 h-10 rounded-none bg-white text-xs">
+        <SelectTrigger className="mt-1 h-10 rounded-none border-border bg-[#0b1524] text-xs text-slate-200">
           <SelectValue placeholder="Choose…" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="rounded-none border-border bg-card">
           {players.map((p) => (
             <SelectItem key={p._id} value={p._id}>
               {p.name} · {p.role}
@@ -763,9 +783,9 @@ function WicketDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-none sm:max-w-sm">
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-none border-border sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="uppercase text-[#E4002B]">Wicket</DialogTitle>
+          <DialogTitle className="uppercase text-[#ef4444]">Wicket</DialogTitle>
           <DialogDescription>How was the batter dismissed?</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
@@ -778,8 +798,8 @@ function WicketDialog({
                 className={cn(
                   "border px-2 py-2 text-[10px] font-extrabold uppercase tracking-wide",
                   wicketType === w
-                    ? "border-[#E4002B] bg-[#E4002B] text-white"
-                    : "border-foreground bg-white text-foreground/60",
+                    ? "border-[#ef4444] bg-[#ef4444] text-white"
+                    : "border-border bg-card text-slate-400",
                 )}
               >
                 {w}
@@ -793,10 +813,10 @@ function WicketDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" className="rounded-none uppercase" onClick={onCancel}>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="rounded-none bg-[#E4002B] uppercase text-white hover:bg-foreground" onClick={submit} disabled={busy}>
+          <Button className="rounded-none bg-[#ef4444] uppercase text-white hover:bg-[#dc2626]" onClick={submit} disabled={busy}>
             Record wicket
           </Button>
         </DialogFooter>
@@ -843,9 +863,9 @@ function ExtraDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="rounded-none sm:max-w-sm">
+      <DialogContent className="rounded-none border-border sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="uppercase">
+          <DialogTitle className="uppercase text-white">
             {type === "wide" ? "Wide" : type === "noball" ? "No-ball" : type === "bye" ? "Bye" : "Leg-bye"}
           </DialogTitle>
           <DialogDescription>{label}</DialogDescription>
@@ -859,8 +879,8 @@ function ExtraDialog({
               className={cn(
                 "score-nums border py-3 text-lg font-extrabold",
                 runs === n
-                  ? "border-[#E4002B] bg-[#E4002B] text-white"
-                  : "border-foreground bg-white",
+                  ? "border-[#facc15] bg-[#facc15] text-[#422006]"
+                  : "border-border bg-card text-slate-300",
               )}
             >
               {n}
@@ -868,10 +888,10 @@ function ExtraDialog({
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" className="rounded-none uppercase" onClick={onCancel}>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="rounded-none bg-[#E4002B] uppercase text-white hover:bg-foreground" onClick={submit} disabled={busy}>
+          <Button className="rounded-none bg-[#facc15] uppercase text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]" onClick={submit} disabled={busy}>
             Record
           </Button>
         </DialogFooter>
@@ -895,7 +915,7 @@ function BowlerPicker({
       <Picker label="Bowler" value={value} onChange={setValue} players={squad} />
       <Button
         type="button"
-        className="w-full rounded-none bg-foreground uppercase text-white hover:bg-[#002FA7]"
+        className="w-full rounded-none bg-[#22d3ee] uppercase text-[#083344] hover:bg-[#22c55e] hover:text-[#052e16]"
         disabled={!value || value === currentId}
         onClick={() => onPick(value)}
       >

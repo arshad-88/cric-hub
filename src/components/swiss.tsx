@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import type { BallKind } from "@/lib/vpl";
 import type { ReactNode } from "react";
 
-// ---- Swiss typographic atoms ----------------------------------------------
+// ---- typographic atoms -----------------------------------------------------
 
 export function MicroLabel({
   children,
@@ -12,13 +12,13 @@ export function MicroLabel({
   className?: string;
 }) {
   return (
-    <span className={cn("micro-label text-foreground", className)}>
+    <span className={cn("micro-label text-muted-foreground", className)}>
       {children}
     </span>
   );
 }
 
-/** Numbered Swiss section heading, e.g. "02 — FIXTURES". */
+/** Numbered section heading, e.g. "02 — LIVE MATCH". */
 export function SectionHeading({
   index,
   title,
@@ -30,17 +30,19 @@ export function SectionHeading({
 }) {
   return (
     <div className={cn("flex items-baseline gap-4", className)}>
-      <span className="text-[#E4002B] font-bold text-sm score-nums">{index}</span>
-      <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight uppercase">
+      <span className="text-[#22c55e] led-green text-sm font-extrabold score-nums">
+        {index}
+      </span>
+      <h2 className="text-2xl font-extrabold uppercase tracking-tight text-foreground sm:text-3xl">
         {title}
       </h2>
-      <span className="flex-1 rule-t self-center" aria-hidden />
+      <span className="flex-1 self-center border-t border-border" aria-hidden />
     </div>
   );
 }
 
 export function Rule({ className }: { className?: string }) {
-  return <div className={cn("border-t border-foreground", className)} aria-hidden />;
+  return <div className={cn("border-t border-border", className)} aria-hidden />;
 }
 
 // ---- status pill -----------------------------------------------------------
@@ -56,12 +58,11 @@ export function StatusPill({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 bg-[#E4002B] text-white micro-label px-2 py-0.5",
+          "inline-flex items-center gap-1.5 bg-[#ef4444] px-2 py-0.5 micro-label text-white glow-red",
           className,
         )}
       >
-        <span className="relative flex size-1.5">
-          <span className="absolute inline-flex h-full w-full animate-ping bg-white opacity-75" />
+        <span className="live-dot relative flex size-1.5">
           <span className="relative inline-flex size-1.5 rounded-full bg-white" />
         </span>
         LIVE
@@ -73,8 +74,8 @@ export function StatusPill({
       className={cn(
         "inline-flex micro-label px-2 py-0.5",
         status === "UPCOMING"
-          ? "border border-foreground bg-white text-foreground"
-          : "bg-foreground text-white",
+          ? "border border-border bg-card text-muted-foreground"
+          : "bg-[#22c55e] text-[#052e16]",
         className,
       )}
     >
@@ -104,7 +105,7 @@ export function TeamMark({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center font-extrabold tracking-wide text-white",
+        "inline-flex shrink-0 items-center justify-center font-extrabold tracking-wide text-white panel-glow",
         sizes[size],
         className,
       )}
@@ -116,16 +117,17 @@ export function TeamMark({
   );
 }
 
-// ---- recent-ball chip ------------------------------------------------------
+// ---- ball chip timeline (broadcast colors) ---------------------------------
+// Green = 4s & 6s · Red = wickets · Gold = wides/extras · Cyan = no-balls
 
 const ballKindStyles: Record<BallKind, string> = {
-  dot: "border border-foreground bg-white text-foreground",
-  runs: "bg-foreground text-white",
-  boundary: "bg-[#002FA7] text-white",
-  wicket: "bg-[#E4002B] text-white",
-  wide: "border-b-2 border-foreground bg-white text-foreground",
-  bye: "border border-foreground/50 bg-white text-foreground",
-  extra: "border-2 border-[#002FA7] bg-white text-[#002FA7]",
+  dot: "border border-border bg-card text-slate-400",
+  runs: "bg-slate-200 text-slate-900",
+  boundary: "bg-[#22c55e] text-[#052e16] glow-green",
+  wicket: "bg-[#ef4444] text-white glow-red",
+  wide: "bg-[#facc15] text-[#422006] glow-gold",
+  bye: "border border-[#facc15]/70 bg-card text-[#facc15]",
+  extra: "border border-[#22d3ee] bg-[#22d3ee]/10 text-[#22d3ee]",
 };
 
 export function BallChip({
@@ -155,7 +157,7 @@ export function BallChip({
   );
 }
 
-// ---- simple bordered block -------------------------------------------------
+// ---- simple bordered panel -------------------------------------------------
 
 export function BorderedPanel({
   children,
@@ -165,7 +167,7 @@ export function BorderedPanel({
   className?: string;
 }) {
   return (
-    <div className={cn("border border-foreground bg-white", className)}>
+    <div className={cn("border border-border bg-card panel-glow", className)}>
       {children}
     </div>
   );

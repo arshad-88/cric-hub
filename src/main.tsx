@@ -1,12 +1,20 @@
 import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
+import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequireAuth } from "@/components/RequireAuth";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
 import "./index.css";
 
 // Lazy load route components for better code splitting
@@ -19,7 +27,14 @@ const MatchDetail = lazy(() => import("./pages/MatchDetail.tsx"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard.tsx"));
 const Teams = lazy(() => import("./pages/Teams.tsx"));
 const TeamDetail = lazy(() => import("./pages/TeamDetail.tsx"));
+const Tournaments = lazy(() => import("./pages/Tournaments.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+
+/** Legacy /scorer/:matchId → new /admin/scorer/:matchId. */
+function OldScorerRedirect() {
+  const { matchId } = useParams<{ matchId: string }>();
+  return <Navigate to={`/admin/scorer/${matchId ?? ""}`} replace />;
+}
 
 // Simple loading fallback for route transitions
 function RouteLoading() {
@@ -128,29 +143,37 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={<Landing />} />
               <Route
                 path="/auth"
-                element={<AuthPage redirectAfterAuth="/dashboard" />}
+                element={<AuthPage redirectAfterAuth="/admin" />}
               />
               <Route path="/matches" element={<Matches />} />
               <Route path="/matches/:id" element={<MatchDetail />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/teams" element={<Teams />} />
               <Route path="/teams/:id" element={<TeamDetail />} />
+              <Route path="/tournaments" element={<Tournaments />} />
               <Route
-                path="/dashboard"
+                path="/admin"
                 element={
                   <RequireAuth>
-                    <Dashboard />
+                    <RequireAdmin>
+                      <Dashboard />
+                    </RequireAdmin>
                   </RequireAuth>
                 }
               />
               <Route
-                path="/scorer/:matchId"
+                path="/admin/scorer/:matchId"
                 element={
                   <RequireAuth>
-                    <Scorer />
+                    <RequireAdmin>
+                      <Scorer />
+                    </RequireAdmin>
                   </RequireAuth>
                 }
               />
+              {/* legacy redirects */}
+              <Route path="/dashboard" element={<Navigate to="/admin" replace />} />
+              <Route path="/scorer/:matchId" element={<OldScorerRedirect />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

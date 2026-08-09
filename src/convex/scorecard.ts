@@ -10,6 +10,7 @@ import type { Id } from "./_generated/dataModel";
 import {
   aggregateBatterStats,
   aggregateBowlerStats,
+  aggregateOvers,
   buildBallSymbol,
   buildCommentary,
   computeMatchResult,
@@ -242,6 +243,7 @@ export const get = query({
         bowlers,
         recentBalls: ballViews.slice(-8),
         commentary: [...ballViews].reverse(),
+        overs: aggregateOvers(deliveries),
         extras,
         isCurrent,
         isComplete,

@@ -5,7 +5,8 @@
 // ---------------------------------------------------------------------------
 
 import { mutation, query } from "./_generated/server";
-import { getActiveTournament, getCurrentUserAny } from "./helpers";
+import { v } from "convex/values";
+import { getCurrentUserAny } from "./helpers";
 import { ROLES } from "./schema";
 
 export const grantAdmin = mutation({
@@ -36,13 +37,18 @@ export const hasAnyAdmin = query({
   },
 });
 
-/** Dashboard stats + auth state for the admin hub. */
+/** Admin hub stats for a specific tournament + auth state. */
 export const adminStats = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { tournamentId: v.optional(v.id("tournaments")) },
+  handler: async (ctx, { tournamentId }) => {
     const user = await getCurrentUserAny(ctx);
     const isAdmin = user?.role === ROLES.ADMIN;
-    const tournament = await getActiveTournament(ctx);
+    const tournament = tournamentId
+      ? await ctx.db.get(tournamentId)
+      : await ctx.db
+          .query("tournaments")
+          .withIndex("by_active", (q) => q.eq("active", true))
+          .first();
 
     let counts = { teams: 0, players: 0, upcoming: 0, live: 0, completed: 0 };
     if (tournament) {

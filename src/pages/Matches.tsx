@@ -1,10 +1,12 @@
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { MatchCard } from "@/components/MatchCard";
 import { SectionHeading } from "@/components/swiss";
 import { cn } from "@/lib/utils";
+import type { Id } from "@/convex/_generated/dataModel";
 
 type MatchStatus = "UPCOMING" | "LIVE" | "COMPLETED";
 
@@ -16,9 +18,17 @@ const FILTERS: { key: "ALL" | MatchStatus; label: string }[] = [
 ];
 
 export default function Matches() {
+  const [searchParams] = useSearchParams();
+  const tournamentParam = searchParams.get("tournament");
   const [filter, setFilter] = useState<"ALL" | MatchStatus>("ALL");
-  const all = useQuery(api.matches.list, {});
-  const tournament = useQuery(api.tournaments.getActive);
+  const all = useQuery(
+    api.matches.list,
+    tournamentParam
+      ? { tournamentId: tournamentParam as Id<"tournaments"> }
+      : {},
+  );
+  const tournaments = useQuery(api.tournaments.list);
+  const activeTournament = useQuery(api.tournaments.getActive);
 
   const matches = all ?? [];
   const filtered =
@@ -28,16 +38,21 @@ export default function Matches() {
   const upcomingCount = matches.filter((m) => m.status === "UPCOMING").length;
   const completedCount = matches.filter((m) => m.status === "COMPLETED").length;
 
+  const selected = tournamentParam
+    ? tournaments?.find((t) => t.id === tournamentParam)
+    : null;
+  const heading = selected
+    ? `${selected.name} — Fixtures`
+    : activeTournament
+      ? `${activeTournament.name} — Fixtures`
+      : "Fixtures";
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
-        <SectionHeading
-          index="01"
-          title={tournament ? `${tournament.name} — Fixtures` : "Fixtures"}
-          className="mb-2"
-        />
-        <p className="mb-6 text-xs uppercase tracking-widest text-foreground/55">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-10">
+        <SectionHeading index="01" title={heading} className="mb-2" />
+        <p className="mb-6 text-xs uppercase tracking-widest text-slate-500">
           {liveCount} live · {upcomingCount} upcoming · {completedCount} completed
         </p>
 
@@ -51,9 +66,9 @@ export default function Matches() {
                 "micro-label border px-3 py-2 transition-colors",
                 filter === f.key
                   ? f.key === "LIVE"
-                    ? "border-[#E4002B] bg-[#E4002B] text-white"
-                    : "border-foreground bg-foreground text-white"
-                  : "border-foreground bg-white text-foreground/60 hover:text-foreground",
+                    ? "border-[#ef4444] bg-[#ef4444] text-white"
+                    : "border-[#22c55e] bg-[#22c55e] text-[#052e16]"
+                  : "border-border bg-card text-slate-400 hover:text-white",
               )}
             >
               {f.label}
@@ -62,7 +77,7 @@ export default function Matches() {
         </div>
 
         {filtered.length === 0 ? (
-          <p className="border border-foreground bg-white px-4 py-14 text-center text-xs font-bold uppercase tracking-widest text-foreground/40">
+          <p className="border border-border bg-card px-4 py-14 text-center text-xs font-bold uppercase tracking-widest text-slate-500">
             No {filter === "ALL" ? "" : filter.toLowerCase() + " "}matches yet
           </p>
         ) : (

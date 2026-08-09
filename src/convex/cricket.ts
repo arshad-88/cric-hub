@@ -357,6 +357,40 @@ export function aggregateBowlerStats(
   return map;
 }
 
+// ---- per-over breakdown ---------------------------------------------------
+
+export interface OverBallView {
+  symbol: string;
+  kind: BallKind;
+}
+
+export interface OverView {
+  over: number;
+  runs: number;
+  wickets: number;
+  legalBalls: number;
+  balls: OverBallView[];
+}
+
+/** Runs, wickets and ball symbols grouped by over (for the Overs tab). */
+export function aggregateOvers(deliveries: DeliveryLike[]): OverView[] {
+  const map = new Map<number, Omit<OverView, "over">>();
+  for (const d of deliveries) {
+    let o = map.get(d.overNumber);
+    if (!o) {
+      o = { runs: 0, wickets: 0, legalBalls: 0, balls: [] };
+      map.set(d.overNumber, o);
+    }
+    o.runs += d.totalRuns;
+    if (d.isWicket) o.wickets += 1;
+    if (isLegalBall(d.extraType)) o.legalBalls += 1;
+    o.balls.push(buildBallSymbol(d));
+  }
+  return [...map.entries()]
+    .map(([over, v]) => ({ over, ...v }))
+    .sort((a, b) => a.over - b.over);
+}
+
 /** Net run rate — overs all-out count as the full allocation. */
 export function teamNRR(
   runsFor: number,
