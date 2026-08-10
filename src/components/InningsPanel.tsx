@@ -1,5 +1,5 @@
 import { BallChip, MicroLabel, TeamMark } from "@/components/swiss";
-import type { InningsView } from "@/lib/vpl";
+import type { InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function BallsRow({ innings }: { innings: InningsView }) {

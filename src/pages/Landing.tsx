@@ -343,7 +343,7 @@ export default function Landing() {
               </h3>
               <ol className="mt-4 space-y-3">
                 {[
-                  "Sign in with just your phone number — no OTP",
+                  "Sign in with your Gmail — a 6-digit code unlocks your hub",
                   "Create tournaments, teams, rosters and fixtures",
                   "Add co-organizers by phone so friends can score too",
                   "Stream link, undo, overs — all from the pitch side",

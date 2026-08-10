@@ -183,19 +183,19 @@
 }
 
 /* live ticker — LED departure-board marquee */
-@keyframes vpl-marquee {
+@keyframes ticker-marquee {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
 .ticker-track {
   display: flex;
   width: max-content;
-  animation: vpl-marquee 40s linear infinite;
+  animation: ticker-marquee 40s linear infinite;
 }
 
 /* pulsing LIVE dot */
-@keyframes vpl-pulse {
+@keyframes live-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
 }
-.live-dot { animation: vpl-pulse 1.1s ease-in-out infinite; }
+.live-dot { animation: live-pulse 1.1s ease-in-out infinite; }

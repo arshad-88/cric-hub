@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { SectionHeading, StatusPill } from "@/components/swiss";
 import { cn } from "@/lib/utils";
-import { formatDate, type TournamentStatus } from "@/lib/vpl";
+import { formatDate, type TournamentStatus } from "@/lib/format";
 import { ArrowRight, Calendar, MapPin, Users } from "lucide-react";
 
 const FILTERS: { key: "ALL" | TournamentStatus; label: string }[] = [

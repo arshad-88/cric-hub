@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// vpl.ts — client-side domain types + Swiss-style formatting helpers
+// format.ts — client-side domain types + Swiss-style formatting helpers
 // ---------------------------------------------------------------------------
 
 export interface TeamLite {

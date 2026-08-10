@@ -16,7 +16,7 @@ import { MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatDate, formatTime } from "@/lib/vpl";
+import { formatDate, formatTime } from "@/lib/format";
 import {
   ArrowLeft,
   ArrowRight,

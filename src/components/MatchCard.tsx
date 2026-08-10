@@ -1,5 +1,5 @@
 import { StatusPill, TeamMark } from "@/components/swiss";
-import { formatDate, formatTime, type MatchRow } from "@/lib/vpl";
+import { formatDate, formatTime, type MatchRow } from "@/lib/format";
 import { Link } from "react-router";
 import { Calendar, MapPin, Play } from "lucide-react";
 

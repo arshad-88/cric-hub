@@ -23,7 +23,7 @@ import {
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatOvers } from "@/lib/vpl";
+import { formatOvers } from "@/lib/format";
 import {
   ArrowLeft,
   ArrowLeftRight,

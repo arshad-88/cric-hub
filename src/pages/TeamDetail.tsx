@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 import { useParams, Link } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
-import { formatDate } from "@/lib/vpl";
+import { formatDate } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -34,7 +34,7 @@ export default function TeamDetail() {
       <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-20">
-          <p className="border border-foreground bg-white px-4 py-14 text-center text-xs font-bold uppercase tracking-widest text-foreground/40">
+          <p className="border border-border bg-card px-4 py-14 text-center text-xs font-bold uppercase tracking-widest text-slate-500">
             Team not found
           </p>
         </main>
@@ -51,7 +51,7 @@ export default function TeamDetail() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
         <Link
           to="/teams"
-          className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#002FA7] hover:underline"
+          className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:text-[#22d3ee]"
         >
           <ArrowLeft className="size-3.5" /> All teams
         </Link>

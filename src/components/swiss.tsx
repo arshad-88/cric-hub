@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { BallKind } from "@/lib/vpl";
+import type { BallKind } from "@/lib/format";
 import type { ReactNode } from "react";
 
 // ---- typographic atoms -----------------------------------------------------

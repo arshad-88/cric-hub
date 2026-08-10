@@ -8,7 +8,7 @@ import { CommentaryFeed } from "@/components/CommentaryFeed";
 import { StreamEmbed } from "@/components/StreamEmbed";
 import { PointsTable } from "@/components/PointsTable";
 import { BallChip, MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
-import { formatDate, formatTime, type InningsView } from "@/lib/vpl";
+import { formatDate, formatTime, type InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Calendar,

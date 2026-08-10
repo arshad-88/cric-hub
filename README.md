@@ -3,8 +3,9 @@
 A real-time, multi-tournament cricket scoring & broadcast platform. Think
 CricHeroes/ESPNcricinfo for community leagues: fans follow live ball-by-ball
 scores, streams and stats with **no account**; anyone can **sign in with their
-phone number** (no OTP, no password) and start their own tournament — the
-creator becomes its **organizer** and decides who else may edit and score.
+Gmail** — a 6-digit code lands in the inbox, no password — and start their own
+tournament. The creator becomes its **organizer** and decides who else may
+edit and score.
 
 The platform is fully generic — any league can be created inside it (name,
 city, ball type, overs, dates, banner, stage). Live updates are pushed to every
@@ -24,7 +25,7 @@ open phone the instant a scorer taps a button; no page refreshes.
 |------------|------|
 | Frontend   | Vite + React 19 + TypeScript + Tailwind CSS v4 |
 | Realtime   | **Convex** (reactive queries + mutations — ball-by-ball subscriptions) |
-| Auth       | Convex Auth via `ConvexCredentials` — **phone number only** (no OTP, no email, no guest) |
+| Auth       | Convex Auth email-OTP — **Gmail + 6-digit code** (no password). Phone numbers are the *player identity* organizers use to auto-fill rosters |
 | Permissions| Per-tournament organizer checks (`requireOrganizer`) enforced inside every write mutation |
 | Routing    | React Router |
 | Streams    | Embedded YouTube / Twitch players (toggleable) |
@@ -49,7 +50,7 @@ open phone the instant a scorer taps a button; no page refreshes.
 | `/matches/:id` | Public | Broadcast match center — Scorecard · Overs · Commentary · Playing XI · Points · Caps tabs + live stream |
 | `/leaderboard` | Public | Points table (P/W/L/T, NRR) + Orange & Purple cap boards |
 | `/teams`, `/teams/:id` | Public | Team grid and squad pages |
-| `/auth` | Public | **Phone-number sign-in** (no OTP — the number is the account) |
+| `/auth` | Public | **Gmail + OTP sign-in** (6-digit code by email, no password) |
 | `/dashboard` | Signed in | **My Hub** — profile, create a tournament, manage the ones you organize (teams, rosters, fixtures, streams, co-organizers), all tournaments |
 | `/scorer/:matchId` | Signed in + organizer | Mobile ball-by-ball scorer (keypad, wickets, extras, undo, stream) — blocked for non-organizers |
 
@@ -82,8 +83,10 @@ bunx convex run seed:reset
 
 ## How organizing works
 
-1. Sign in at `/auth` with any phone number (a new number creates the profile;
-   the optional name is editable later in My Hub).
+1. Sign in at `/auth` with your **Gmail** — a 6-digit code is emailed to you.
+   Your phone number is optional; it is the identity organizers type when
+   building rosters, and it pulls your name + every stat you've ever scored
+   into the squad automatically (still editable).
 2. Open `/dashboard` → **Start a new tournament**. You are its creator and
    first organizer.
 3. Manage it from My Hub: add teams, build rosters (enter a player's phone
@@ -126,8 +129,8 @@ If you want to run the PostgreSQL/PostgREST version instead:
 
 `tournaments → teams → players` · `matches → innings → deliveries`
 
-- **users** — Convex Auth accounts with a canonical `phone` (the login handle)
-  and editable `name`
+- **users** — Convex Auth accounts (Gmail + OTP) with an optional canonical
+  `phone` — the player identity used for roster auto-fill — and editable `name`
 - **tournaments** — name, year, city, ball type (Grace/Leather/Tennis), dates,
   banner, default overs, featured flag, `organizers[]` (creator first)
 - **teams** — tournament, name, short code, color, logo

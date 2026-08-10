@@ -1,11 +1,11 @@
 {
-  "name": "freebuff.com application",
-  "short_name": "freebuff.com",
-  "description": "freebuff.com application",
+  "name": "CricPulse — Live Community Cricket",
+  "short_name": "CricPulse",
+  "description": "Real-time cricket scores, ball-by-ball commentary, points tables, caps and live streams — plus auction rooms for your league.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
   "icons": [
     {
       "src": "/logo.png",

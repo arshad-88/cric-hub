@@ -3,7 +3,7 @@ import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { Link, useNavigate } from "react-router";
 import { BallChip, MicroLabel } from "@/components/swiss";
-import { formatOvers } from "@/lib/vpl";
+import { formatOvers } from "@/lib/format";
 import { LogIn, Plus } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -180,7 +180,7 @@ export function SiteFooter() {
         <div>
           <MicroLabel className="text-slate-500">Organizers</MicroLabel>
           <ul className="mt-3 space-y-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-            <li><Link className="transition-colors hover:text-[#22c55e]" to="/auth">Sign in with your number</Link></li>
+            <li><Link className="transition-colors hover:text-[#22c55e]" to="/auth">Sign in with your Gmail</Link></li>
             <li><Link className="transition-colors hover:text-[#22c55e]" to="/dashboard">Start a tournament</Link></li>
             <li><Link className="transition-colors hover:text-[#22c55e]" to="/tournaments">Find a league to score</Link></li>
           </ul>

@@ -1,5 +1,5 @@
 import { BallChip, MicroLabel } from "@/components/swiss";
-import type { BallView } from "@/lib/vpl";
+import type { BallView } from "@/lib/format";
 import { MessageSquareText } from "lucide-react";
 
 export function CommentaryFeed({ balls }: { balls: BallView[] }) {

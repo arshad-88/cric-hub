@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { parseYouTubeId, twitchChannel } from "@/lib/vpl";
+import { parseYouTubeId, twitchChannel } from "@/lib/format";
 import { Clapperboard, Eye, EyeOff, Radio } from "lucide-react";
 import { useState } from "react";
 

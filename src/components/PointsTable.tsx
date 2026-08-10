@@ -1,5 +1,5 @@
 import { TeamMark } from "@/components/swiss";
-import type { PointsRow } from "@/lib/vpl";
+import type { PointsRow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function PointsTable({ rows }: { rows: PointsRow[] }) {
