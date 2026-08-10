@@ -1,7 +1,7 @@
 import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { Button } from "@/components/ui/button";
@@ -174,7 +174,6 @@ function StatBar({ label, value }: { label: string; value: number }) {
 
 export default function AuctionRoom() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const room = useQuery(
     api.auction.get,
@@ -520,13 +519,12 @@ function LiveBlock({
   const { user } = useAuth();
   const myTeam = room.teams.find((t) => t.ownerId === user?._id) ?? null;
 
-  // timer
-  const [, setTick] = useState(0);
+  // timer — refreshes `now` every 500ms so the bid clock ticks down
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setTick((x) => x + 1), 500);
+    const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
-  const now = Date.now();
   const remaining = room.bidEndsAt ? Math.max(0, room.bidEndsAt - now) : 0;
   const secs = Math.ceil(remaining / 1000);
   const mm = String(Math.floor(secs / 60)).padStart(2, "0");

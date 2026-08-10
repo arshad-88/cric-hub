@@ -2,7 +2,6 @@ import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 import { useParams } from "react-router";
-import { Link } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { InningsPanel } from "@/components/InningsPanel";
 import { CommentaryFeed } from "@/components/CommentaryFeed";
@@ -15,7 +14,6 @@ import {
   Calendar,
   Clapperboard,
   MapPin,
-  RotateCcw,
   Trophy,
 } from "lucide-react";
 import { motion } from "framer-motion";

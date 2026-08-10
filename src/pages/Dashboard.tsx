@@ -1,6 +1,6 @@
 import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,10 +90,10 @@ export default function Dashboard() {
   const [tournamentId, setTournamentId] = useState<string>("");
 
   // default the working tournament to the first one the user organizes
-  useEffect(() => {
-    if (tournamentId || myTours.length === 0) return;
-    setTournamentId(myTours[0].id);
-  }, [myTours, tournamentId]);
+  const defaultTournamentId = myTours[0]?.id;
+  if (defaultTournamentId && !tournamentId) {
+    setTournamentId(defaultTournamentId);
+  }
 
   const working = tournaments?.find((t) => t.id === tournamentId) ?? null;
   const canManage = working
@@ -1038,11 +1038,10 @@ function PlayerForm({
     api.users.lookupByPhone,
     digits.length >= 10 ? { phone: digits } : "skip",
   );
-  useEffect(() => {
-    if (lookup && !nameEdited) {
-      setName(lookup.name);
-    }
-  }, [lookup, nameEdited]);
+  // auto-fill the name from the phone lookup until the user edits it
+  if (lookup && !nameEdited && lookup.name !== name) {
+    setName(lookup.name);
+  }
 
   const submit = async () => {
     if (!name.trim()) {

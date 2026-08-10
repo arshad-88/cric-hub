@@ -1,15 +1,13 @@
 import { Button } from "@/components/ui/button";
-import { isTwitchUrl, parseYouTubeId, twitchChannel } from "@/lib/vpl";
+import { parseYouTubeId, twitchChannel } from "@/lib/vpl";
 import { Clapperboard, Eye, EyeOff, Radio } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 /** YouTube or Twitch live embed. Toggleable so fans can hide it. */
 export function StreamEmbed({ url }: { url: string | null }) {
   const [hidden, setHidden] = useState(false);
-  const [host, setHost] = useState("");
-  useEffect(() => {
-    setHost(window.location.hostname);
-  }, []);
+  // Twitch embeds need the page host as the `parent` param.
+  const [host] = useState(() => window.location.hostname);
 
   const youTubeId = url ? parseYouTubeId(url) : null;
   const twitch = url ? twitchChannel(url) : null;

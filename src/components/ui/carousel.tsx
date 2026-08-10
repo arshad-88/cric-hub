@@ -86,14 +86,22 @@ function Carousel({
     [scrollPrev, scrollNext]
   )
 
-  React.useEffect(() => {
-    if (!api || !setApi) return
+  // Expose the embla instance to the parent as soon as it initializes.
+  const [storedApi, setStoredApi] = React.useState<CarouselApi>(api)
+  if (api && setApi && api !== storedApi) {
+    setStoredApi(api)
     setApi(api)
-  }, [api, setApi])
+  }
+
+  // Sync the arrow buttons as soon as the embla instance initializes.
+  const [prevApi, setPrevApi] = React.useState<CarouselApi>(api)
+  if (api && api !== prevApi) {
+    setPrevApi(api)
+    onSelect(api)
+  }
 
   React.useEffect(() => {
     if (!api) return
-    onSelect(api)
     api.on("reInit", onSelect)
     api.on("select", onSelect)
 

@@ -425,7 +425,6 @@ export default function Scorer() {
       {/* dialogs */}
       {wicketOpen && current && (
         <WicketDialog
-          inningsId={current.id}
           strikerId={striker?._id ?? null}
           battingSquad={battingSquad ?? []}
           bowlingSquad={bowlingSquad ?? []}
@@ -769,14 +768,12 @@ function Picker({
 }
 
 function WicketDialog({
-  inningsId,
   strikerId,
   battingSquad,
   bowlingSquad,
   onCancel,
   onConfirm,
 }: {
-  inningsId: string;
   strikerId: string | null;
   battingSquad: PlayerDoc[];
   bowlingSquad: PlayerDoc[];

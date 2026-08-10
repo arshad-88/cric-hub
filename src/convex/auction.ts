@@ -21,26 +21,6 @@ import { IPL_PLAYERS, type IplStatLine } from "./iplCatalog";
 
 // ---- shared shapes ---------------------------------------------------------
 
-const statLine = {
-  matches: v.number(),
-  runs: v.number(),
-  wickets: v.number(),
-  sr: v.number(),
-  econ: v.number(),
-};
-
-const poolPlayer = v.object({
-  key: v.string(),
-  name: v.string(),
-  role: v.string(),
-  basePrice: v.number(),
-  photoUrl: v.optional(v.string()),
-  wiki: v.optional(v.string()),
-  teamShort: v.optional(v.string()),
-  career: v.optional(v.object(statLine)),
-  form: v.optional(v.object(statLine)),
-});
-
 export type PoolPlayer = {
   key: string;
   name: string;
