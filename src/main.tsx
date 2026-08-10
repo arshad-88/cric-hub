@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";

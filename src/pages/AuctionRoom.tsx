@@ -25,7 +25,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 // ---- money -----------------------------------------------------------------
 
-export function inr(lakhs: number): string {
+function inr(lakhs: number): string {
   if (lakhs >= 100) {
     const cr = lakhs / 100;
     return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(1)} Cr`;

@@ -6,6 +6,11 @@
 // aggregate deliveries across all of those docs to build a true career line:
 // runs, balls, fours/sixes, wickets, matches, innings — and a "recent form"
 // slice (last N completed matches) used by the auction's best-squad logic.
+//
+// The exported `*FromDeliveries` helpers are pure aggregators that operate on
+// an already-loaded deliveries snapshot, so hot paths (like building a custom
+// auction pool) can fetch the table once and reuse it for every player instead
+// of scanning `deliveries` once per player.
 // ---------------------------------------------------------------------------
 
 import type { Id } from "./_generated/dataModel";
@@ -37,17 +42,24 @@ export const emptyCareer = (): CareerLine => ({
   runsConceded: 0,
 });
 
+/** Minimal deliveries shape the aggregators need (matches the table). */
+export type DeliveriesRow = {
+  matchId: Id<"matches">;
+  inningsId: Id<"innings">;
+  batsmanId: Id<"players">;
+  bowlerId: Id<"players">;
+  overNumber: number;
+  ballNumber: number;
+  runsScored: number;
+  extraType: "none" | "wide" | "noball" | "bye" | "legbye";
+  extraRuns: number;
+  totalRuns: number;
+  isWicket: boolean;
+  _creationTime: number;
+};
+
 function aggregateRows(
-  rows: {
-    matchId: Id<"matches">;
-    inningsId: Id<"innings">;
-    batsmanId: Id<"players">;
-    bowlerId: Id<"players">;
-    runsScored: number;
-    extraType: string;
-    totalRuns: number;
-    isWicket: boolean;
-  }[],
+  rows: DeliveriesRow[],
   ids: Set<string>,
 ): CareerLine {
   const out = emptyCareer();
@@ -57,20 +69,48 @@ function aggregateRows(
     matches.add(d.matchId);
     innings.add(d.inningsId);
     if (ids.has(d.batsmanId)) {
-      if (isLegalBall(d.extraType as never)) out.balls += 1;
+      if (isLegalBall(d.extraType)) out.balls += 1;
       out.runs += d.runsScored;
       if (d.runsScored === 4) out.fours += 1;
       if (d.runsScored === 6) out.sixes += 1;
     }
     if (ids.has(d.bowlerId)) {
-      if (isLegalBall(d.extraType as never)) out.ballsBowled += 1;
+      if (isLegalBall(d.extraType)) out.ballsBowled += 1;
       out.runsConceded += d.totalRuns;
-      if (bowlerCredited(d as never)) out.wickets += 1;
+      if (bowlerCredited(d)) out.wickets += 1;
     }
   }
   out.matches = matches.size;
   out.innings = innings.size;
   return out;
+}
+
+/** Full career line from an already-loaded deliveries snapshot. */
+export function careerFromDeliveries(
+  rows: readonly DeliveriesRow[],
+  ids: Set<string>,
+): CareerLine {
+  return aggregateRows(rows as DeliveriesRow[], ids);
+}
+
+/** Recent-form line (last `recentMatches` matches) from a loaded snapshot. */
+export function formFromDeliveries(
+  rows: readonly DeliveriesRow[],
+  ids: Set<string>,
+  recentMatches = 3,
+): CareerLine {
+  const sorted = [...rows].sort((a, b) => b._creationTime - a._creationTime);
+  const seenMatches = new Set<string>();
+  const mine: DeliveriesRow[] = [];
+  for (const d of sorted) {
+    if (!ids.has(d.batsmanId) && !ids.has(d.bowlerId)) continue;
+    if (!seenMatches.has(d.matchId)) {
+      if (seenMatches.size >= recentMatches) break;
+      seenMatches.add(d.matchId);
+    }
+    mine.push(d);
+  }
+  return aggregateRows(mine, ids);
 }
 
 /** Full career line across every tournament the player docs appear in. */
@@ -81,10 +121,7 @@ export async function careerForPlayerDocs(
   if (playerDocs.length === 0) return emptyCareer();
   const ids = new Set(playerDocs.map((p) => String(p._id)));
   const deliveries = await ctx.db.query("deliveries").collect();
-  const mine = deliveries.filter(
-    (d) => ids.has(d.batsmanId) || ids.has(d.bowlerId),
-  );
-  return aggregateRows(mine as never, ids);
+  return careerFromDeliveries(deliveries, ids);
 }
 
 /** Recent-form line: the last `recentMatches` matches with data, newest first. */
@@ -96,18 +133,7 @@ export async function formForPlayerDocs(
   if (playerDocs.length === 0) return emptyCareer();
   const ids = new Set(playerDocs.map((p) => String(p._id)));
   const deliveries = await ctx.db.query("deliveries").collect();
-  deliveries.sort((a, b) => b._creationTime - a._creationTime);
-  const seenMatches = new Set<string>();
-  const rows: (typeof deliveries)[number][] = [];
-  for (const d of deliveries) {
-    if (!ids.has(d.batsmanId) && !ids.has(d.bowlerId)) continue;
-    if (!seenMatches.has(d.matchId)) {
-      if (seenMatches.size >= recentMatches) break;
-      seenMatches.add(d.matchId);
-    }
-    rows.push(d);
-  }
-  return aggregateRows(rows as never, ids);
+  return formFromDeliveries(deliveries, ids, recentMatches);
 }
 
 /**

@@ -12,9 +12,9 @@ import { mutation, query, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
-  careerForPlayerDocs,
-  formForPlayerDocs,
-  playerDocsByPhone,
+  careerFromDeliveries,
+  formFromDeliveries,
+  type DeliveriesRow,
 } from "./career";
 import { requireUser, type Ctx } from "./helpers";
 import { IPL_PLAYERS, type IplStatLine } from "./iplCatalog";
@@ -96,8 +96,15 @@ export const get = query({
       .query("auctionTeams")
       .withIndex("by_auction", (q) => q.eq("auctionId", auctionId))
       .collect();
-    const users = await ctx.db.query("users").collect();
-    const userMap = new Map(users.map((u) => [u._id, u]));
+    // Resolve only the team owners — never scan the whole users table, which
+    // would slow down (and re-run for) every spectator in the room.
+    const userMap = new Map();
+    for (const t of teams) {
+      if (!userMap.has(t.ownerId)) {
+        const owner = await ctx.db.get(t.ownerId);
+        if (owner) userMap.set(owner._id, owner);
+      }
+    }
     return {
       ...auction,
       teams: teams.map((t) => ({
@@ -150,18 +157,42 @@ async function buildCustomPool(
     .collect();
   const teamMap = new Map(teams.map((t) => [t._id, t]));
   const allPlayers = await ctx.db.query("players").collect();
+
+  // Group every roster doc by its canonical phone so identity lookups are O(1)
+  // instead of scanning the whole players table once per player.
+  const byPhone = new Map<
+    string,
+    { _id: Id<"players">; teamId: Id<"teams">; name: string }[]
+  >();
+  for (const p of allPlayers) {
+    if (!p.phone) continue;
+    const arr = byPhone.get(p.phone) ?? [];
+    arr.push({ _id: p._id, teamId: p.teamId, name: p.name });
+    byPhone.set(p.phone, arr);
+  }
+
+  // Fetch all deliveries once; career/form aggregation below reuses this
+  // single snapshot instead of scanning the deliveries table per player.
+  const deliveries = await ctx.db.query("deliveries").collect();
+
   const pool: PoolPlayer[] = [];
   for (const p of allPlayers) {
     const team = teamMap.get(p.teamId);
     if (!team) continue;
     // identity: all docs sharing this phone (or just this doc)
     const docs = p.phone
-      ? await playerDocsByPhone(ctx, p.phone)
+      ? byPhone.get(p.phone) ?? [{ _id: p._id, teamId: p.teamId, name: p.name }]
       : [{ _id: p._id, teamId: p.teamId, name: p.name }];
-    const [career, form] = await Promise.all([
-      careerForPlayerDocs(ctx, docs),
-      formForPlayerDocs(ctx, docs),
-    ]);
+    const ids = new Set(docs.map((d) => String(d._id)));
+    const career = careerFromDeliveries(
+      deliveries as readonly DeliveriesRow[],
+      ids,
+    );
+    const form = formFromDeliveries(
+      deliveries as readonly DeliveriesRow[],
+      ids,
+      3,
+    );
     pool.push({
       key: String(p._id),
       name: p.name,
