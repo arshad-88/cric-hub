@@ -66,6 +66,24 @@ class ToolbarErrorBoundary extends React.Component<
   }
 }
 
+/** Optional watcher boundary — NotificationAlerts is a nice-to-have; if it ever
+ *  throws (e.g. a hook-context issue) the app must keep running. */
+class AlertsBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err: Error) {
+    console.warn("[NotificationAlerts] Disabled after error:", err.message);
+  }
+  render() {
+    return this.state.hasError ? null : this.props.children;
+  }
+}
+
 /** Hard guard so runtime errors never leave the preview as a blank page. */
 class RootErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -141,6 +159,9 @@ createRoot(document.getElementById("root")!).render(
       <ConvexAuthProvider client={convex}>
         <BrowserRouter>
           <RouteSyncer />
+          <AlertsBoundary>
+            <NotificationAlerts />
+          </AlertsBoundary>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -199,7 +220,6 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
           </Suspense>
         </BrowserRouter>
-        <NotificationAlerts />
         <Toaster />
       </ConvexAuthProvider>
     </RootErrorBoundary>
