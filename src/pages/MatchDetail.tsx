@@ -80,6 +80,13 @@ export default function MatchDetail() {
       ? `${match.tossWinnerId === teamA._id ? teamA.name : teamB.name} won the toss and chose to ${match.tossDecision}`
       : null;
 
+  // A team's score is the innings where that team batted — never assume team A
+  // batted first (the toss may send team B in).
+  const scoreFor = (teamId: string) =>
+    innings.find((i) => i.battingTeam._id === teamId) ?? null;
+  const teamAScore = scoreFor(teamA._id);
+  const teamBScore = scoreFor(teamB._id);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
@@ -118,11 +125,11 @@ export default function MatchDetail() {
                 <p className="truncate text-lg font-black uppercase tracking-tight text-white">
                   {teamA.name}
                 </p>
-                {innings[0] && (
+                {teamAScore && (
                   <p className="score-nums text-3xl font-black text-white led-green">
-                    {innings[0].totalRuns}/{innings[0].wickets}
+                    {teamAScore.totalRuns}/{teamAScore.wickets}
                     <span className="ml-1.5 text-sm font-bold text-slate-400">
-                      ({innings[0].oversLabel})
+                      ({teamAScore.oversLabel})
                     </span>
                   </p>
                 )}
@@ -136,11 +143,11 @@ export default function MatchDetail() {
                 <p className="truncate text-lg font-black uppercase tracking-tight text-white">
                   {teamB.name}
                 </p>
-                {innings[1] && (
+                {teamBScore && (
                   <p className="score-nums text-3xl font-black text-white led-green">
-                    {innings[1].totalRuns}/{innings[1].wickets}
+                    {teamBScore.totalRuns}/{teamBScore.wickets}
                     <span className="ml-1.5 text-sm font-bold text-slate-400">
-                      ({innings[1].oversLabel})
+                      ({teamBScore.oversLabel})
                     </span>
                   </p>
                 )}

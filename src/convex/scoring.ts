@@ -261,6 +261,16 @@ export const recordDelivery = mutation({
       throw new Error("Innings does not belong to this match.");
     }
 
+    // ---- load current state (before validation) ---------------------------
+    const deliveries = await getDeliveries(ctx, inn._id);
+    const wktsSoFar = deliveries.filter((d) => d.isWicket).length;
+    if (isInningsComplete(wktsSoFar, inn.ballsBowled, match.overs)) {
+      throw new Error("This innings is already complete.");
+    }
+    if (inn.number === 2 && inn.target != null && inn.totalRuns >= inn.target) {
+      throw new Error("The chase is already complete.");
+    }
+
     // ---- validation -------------------------------------------------------
     if (args.runsScored < 0 || args.runsScored > 6 || args.extraRuns < 0) {
       throw new Error("Invalid run count.");
@@ -277,8 +287,12 @@ export const recordDelivery = mutation({
       if (args.extraRuns < 1) throw new Error("Byes must be at least 1 run.");
     }
     if (args.isWicket) {
-      if (!args.wicketType || !args.dismissedBatterId || !args.newBatsmanId) {
-        throw new Error("A wicket needs a type, the dismissed batter and the replacement.");
+      if (!args.wicketType || !args.dismissedBatterId) {
+        throw new Error("A wicket needs a type and the dismissed batter.");
+      }
+      // The 10th wicket ends the innings, so no replacement is required.
+      if (wktsSoFar + 1 < 10 && !args.newBatsmanId) {
+        throw new Error("Pick the replacement batter who comes in next.");
       }
     } else if (args.wicketType || args.dismissedBatterId || args.newBatsmanId || args.fielderId) {
       throw new Error("Wicket details supplied without a wicket.");
@@ -294,7 +308,6 @@ export const recordDelivery = mutation({
     }
 
     // ---- ball numbering (legal balls only) --------------------------------
-    const deliveries = await getDeliveries(ctx, inn._id);
     const last = deliveries[deliveries.length - 1];
     let overNumber = 1;
     if (last) {
@@ -425,7 +438,13 @@ export const recordDelivery = mutation({
   },
 });
 
-/** Undo the last ball of the innings — full state rollback via recompute. */
+/**
+ * Undo the last ball of the innings — full state rollback via recompute.
+ * If the requested innings is empty (e.g. innings 2 was auto-created after
+ * innings 1 finished and nothing has been bowled in it yet), it falls back
+ * to the most recent innings that actually has balls so the scorer can fix
+ * an error made on the final ball of the previous innings.
+ */
 export const undoLastDelivery = mutation({
   args: { matchId: v.id("matches"), inningsId: v.id("innings") },
   handler: async (ctx, { matchId, inningsId }) => {
@@ -437,17 +456,42 @@ export const undoLastDelivery = mutation({
       throw new Error("Innings does not belong to this match.");
     }
 
-    const deliveries = (await getDeliveries(ctx, inn._id)).sort(
+    let target = inn;
+    let deliveries = (await getDeliveries(ctx, target._id)).sort(
       (a, b) => b._creationTime - a._creationTime,
     );
-    if (deliveries.length === 0) throw new Error("Nothing to undo — no balls bowled.");
+
+    if (deliveries.length === 0) {
+      const all = await ctx.db
+        .query("innings")
+        .withIndex("by_match", (q) => q.eq("matchId", match._id))
+        .collect();
+      const candidates = all
+        .filter((i) => i.number < target.number)
+        .sort((a, b) => b.number - a.number);
+      for (const cand of candidates) {
+        const ds = await getDeliveries(ctx, cand._id);
+        if (ds.length > 0) {
+          // The empty innings was auto-created — remove it and point the
+          // match back at the innings whose final ball we are undoing.
+          if (target.number === 2) {
+            await ctx.db.delete(target._id);
+            await ctx.db.patch(match._id, { currentInningsId: cand._id });
+          }
+          target = cand;
+          deliveries = ds.sort((a, b) => b._creationTime - a._creationTime);
+          break;
+        }
+      }
+      if (deliveries.length === 0) throw new Error("Nothing to undo — no balls bowled.");
+    }
 
     await ctx.db.delete(deliveries[0]._id);
     const remaining = deliveries.slice(1);
 
     if (remaining.length === 0) {
-      if (inn.number === 1) {
-        await ctx.db.delete(inn._id);
+      if (target.number === 1) {
+        await ctx.db.delete(target._id);
         await ctx.db.patch(match._id, {
           status: "UPCOMING",
           currentInningsId: undefined,
@@ -459,7 +503,7 @@ export const undoLastDelivery = mutation({
           .withIndex("by_match", (q) => q.eq("matchId", match._id))
           .collect();
         const in1 = all.find((i) => i.number === 1);
-        await ctx.db.delete(inn._id);
+        await ctx.db.delete(target._id);
         await ctx.db.patch(match._id, {
           status: "LIVE",
           currentInningsId: in1?._id,
@@ -469,10 +513,10 @@ export const undoLastDelivery = mutation({
       return { ok: true, reset: true };
     }
 
-    const rec = await recomputeInnings(ctx, inn._id);
+    const rec = await recomputeInnings(ctx, target._id);
     if (rec) {
       const prev = remaining[remaining.length - 1];
-      await ctx.db.patch(inn._id, { currentBowlerId: prev.bowlerId });
+      await ctx.db.patch(target._id, { currentBowlerId: prev.bowlerId });
     }
     if (match.status === "COMPLETED") {
       await ctx.db.patch(match._id, { status: "LIVE", result: undefined });

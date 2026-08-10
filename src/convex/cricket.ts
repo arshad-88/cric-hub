@@ -288,9 +288,10 @@ export function aggregateBatterStats(
     return e;
   };
   for (const d of deliveries) {
-    if (d.extraType === EXTRA_TYPE.WIDE) continue; // wide: no ball faced, no bat runs
     const e = ensure(d.batsmanId);
-    e.balls += 1;
+    // Wide: no ball faced and no bat runs. No-ball: no ball faced (batter runs
+    // still credit to the striker, matching career.ts which uses isLegalBall).
+    if (isLegalBall(d.extraType)) e.balls += 1;
     e.runs += d.runsScored;
     if (d.runsScored === 4) e.fours += 1;
     if (d.runsScored === 6) e.sixes += 1;

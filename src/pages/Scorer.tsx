@@ -165,12 +165,21 @@ export default function Scorer() {
   };
 
   const handleUndo = async () => {
-    if (!current) return;
+    if (!scorecard) return;
+    // Undo the innings that actually holds the last ball — this is usually the
+    // current innings, but right after innings 1 auto-completes, innings 2 is
+    // empty and the scorer needs to fix a ball in innings 1 instead.
+    const lastWithBalls =
+      [...scorecard.innings]
+        .reverse()
+        .find((i) => i.commentary.length > 0) ?? null;
+    const undoInnings = lastWithBalls ?? current;
+    if (!undoInnings) return;
     setBusy(true);
     try {
       const res = await undo({
         matchId: match.id as Id<"matches">,
-        inningsId: current.id as Id<"innings">,
+        inningsId: undoInnings.id as Id<"innings">,
       });
       toast.success(res.reset ? "Innings reset." : "Last ball undone.");
     } catch (e) {
@@ -271,11 +280,26 @@ export default function Scorer() {
         )}
 
         {needsOpeners && (
-          <OpenersPanel inningsId={current.id} battingSquad={battingSquad ?? []} bowlingSquad={bowlingSquad ?? []} />
+          <>
+            <OpenersPanel inningsId={current.id} battingSquad={battingSquad ?? []} bowlingSquad={bowlingSquad ?? []} />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setUndoOpen(true)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 border border-border bg-card py-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-300 transition-transform active:scale-95 hover:border-[#ef4444] hover:text-[#ef4444]"
+            >
+              <RotateCcw className="size-4" /> Undo last ball of previous innings
+            </button>
+          </>
         )}
 
         {!needsStart && !needsOpeners && current && (
           <>
+            {matchOver && (
+              <p className="mb-3 border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
+                Match is over — use Undo below to correct the final score
+              </p>
+            )}
             {/* crease */}
             <div className="grid grid-cols-3 gap-px border border-border bg-border">
               <div className="bg-card px-3 py-3">
@@ -335,7 +359,7 @@ export default function Scorer() {
                 <button
                   key={r}
                   type="button"
-                  disabled={busy}
+                  disabled={busy || matchOver}
                   onClick={() => tap(r)}
                   className={cn(
                     "score-nums py-5 text-2xl font-extrabold transition-transform active:scale-95",
@@ -349,41 +373,41 @@ export default function Scorer() {
               ))}
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || matchOver}
                 onClick={() => setWicketOpen(true)}
-                className="score-nums bg-[#ef4444] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626]"
+                className="score-nums bg-[#ef4444] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 W
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || matchOver}
                 onClick={() => setExtraOpen("wide")}
-                className="border-2 border-[#facc15] bg-[#422006] text-sm font-extrabold text-[#facc15] transition-transform active:scale-95"
+                className="border-2 border-[#facc15] bg-[#422006] text-sm font-extrabold text-[#facc15] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 WD
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || matchOver}
                 onClick={() => setExtraOpen("noball")}
-                className="border-2 border-[#22d3ee] bg-[#083344] text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95"
+                className="border-2 border-[#22d3ee] bg-[#083344] text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 NB
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || matchOver}
                 onClick={() => setExtraOpen("bye")}
-                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95"
+                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 BYE
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || matchOver}
                 onClick={() => setExtraOpen("legbye")}
-                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95"
+                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 LB
               </button>
@@ -426,6 +450,7 @@ export default function Scorer() {
       {wicketOpen && current && (
         <WicketDialog
           strikerId={striker?._id ?? null}
+          wicketsSoFar={current.wickets}
           battingSquad={battingSquad ?? []}
           bowlingSquad={bowlingSquad ?? []}
           onCancel={() => setWicketOpen(false)}
@@ -445,7 +470,7 @@ export default function Scorer() {
                 wicketType: payload.wicketType,
                 dismissedBatterId: payload.dismissedBatterId as Id<"players">,
                 fielderId: payload.fielderId as Id<"players"> | undefined,
-                newBatsmanId: payload.newBatsmanId as Id<"players">,
+                newBatsmanId: payload.newBatsmanId as Id<"players"> | undefined,
               });
               toast.success("Wicket recorded.");
               setWicketOpen(false);
@@ -486,7 +511,7 @@ export default function Scorer() {
         />
       )}
 
-      {undoOpen && current && (
+      {undoOpen && (
         <Dialog open onOpenChange={(o) => !o && setUndoOpen(false)}>
           <DialogContent className="rounded-none border-border sm:max-w-sm">
             <DialogHeader>
@@ -769,19 +794,21 @@ function Picker({
 
 function WicketDialog({
   strikerId,
+  wicketsSoFar,
   battingSquad,
   bowlingSquad,
   onCancel,
   onConfirm,
 }: {
   strikerId: string | null;
+  wicketsSoFar: number;
   battingSquad: PlayerDoc[];
   bowlingSquad: PlayerDoc[];
   onCancel: () => void;
   onConfirm: (payload: {
     wicketType: WicketType;
     dismissedBatterId: string;
-    newBatsmanId: string;
+    newBatsmanId?: string;
     fielderId?: string;
     bowlerId: string;
   }) => Promise<void>;
@@ -792,12 +819,18 @@ function WicketDialog({
   const [fielder, setFielder] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // The 10th wicket ends the innings — no replacement comes in.
+  const isFinalWicket = wicketsSoFar + 1 >= 10;
   const needsFielder = wicketType === "Caught" || wicketType === "Run out" || wicketType === "Stumped";
   const available = battingSquad.filter((p) => p._id !== dismissed);
 
   const submit = async () => {
-    if (!dismissed || !newBatsman) {
-      toast.error("Choose the dismissed batter and the replacement.");
+    if (!dismissed) {
+      toast.error("Choose the dismissed batter.");
+      return;
+    }
+    if (!isFinalWicket && !newBatsman) {
+      toast.error("Choose the replacement batter.");
       return;
     }
     setBusy(true);
@@ -805,7 +838,7 @@ function WicketDialog({
       await onConfirm({
         wicketType,
         dismissedBatterId: dismissed,
-        newBatsmanId: newBatsman,
+        newBatsmanId: isFinalWicket ? undefined : newBatsman,
         fielderId: fielder || undefined,
         bowlerId: "",
       });
@@ -840,7 +873,13 @@ function WicketDialog({
             ))}
           </div>
           <Picker label="Dismissed batter" value={dismissed} onChange={setDismissed} players={battingSquad} />
-          <Picker label="New batter in" value={newBatsman} onChange={setNewBatsman} players={available} />
+          {isFinalWicket ? (
+            <p className="border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
+              That's the 10th wicket — innings over
+            </p>
+          ) : (
+            <Picker label="New batter in" value={newBatsman} onChange={setNewBatsman} players={available} />
+          )}
           {needsFielder && (
             <Picker label={`Fielder / keeper (${wicketType === "Stumped" ? "wk" : wicketType === "Caught" ? "catcher" : "thrower"})`} value={fielder} onChange={setFielder} players={bowlingSquad} />
           )}
