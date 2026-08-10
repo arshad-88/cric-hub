@@ -1,0 +1,12 @@
+# Build artifacts — Vercel builds fresh from source
+dist
+node_modules
+
+# Local env files / secrets — never uploaded
+.env
+.env.*
+!.env.example
+
+# Platform-managed files
+.vly
+.vercel
