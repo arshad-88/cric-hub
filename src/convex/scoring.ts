@@ -515,7 +515,11 @@ export const undoLastDelivery = mutation({
 
     const rec = await recomputeInnings(ctx, target._id);
     if (rec) {
-      const prev = remaining[remaining.length - 1];
+      // `remaining` is newest-first, so the ball that is now last is the first
+      // element — its bowler is the one who should be at the crease. (The old
+      // code picked the OLDEST ball's bowler, so after an undo the scorer was
+      // shown the wrong current bowler.)
+      const prev = remaining[0];
       await ctx.db.patch(target._id, { currentBowlerId: prev.bowlerId });
     }
 

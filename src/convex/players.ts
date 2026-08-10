@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireOrganizer } from "./helpers";
+import { normalizePhone, requireOrganizer } from "./helpers";
 import { playerRoleValidator } from "./schema";
 
 export const listByTeam = query({
@@ -48,7 +48,12 @@ export const create = mutation({
     return await ctx.db.insert("players", {
       teamId: args.teamId,
       name: args.name,
-      phone: args.phone,
+      // Store the canonical (E.164-style) number — the same normalization the
+      // account profile and co-organizer lookup use. Storing the raw digits
+      // broke phone-based identity: roster autofill and career merging compare
+      // against the normalized number on the user account, so they silently
+      // stopped matching.
+      phone: args.phone ? normalizePhone(args.phone) : undefined,
       role: args.role,
       battingStyle: args.battingStyle,
       bowlingStyle: args.bowlingStyle,
@@ -76,7 +81,7 @@ export const update = mutation({
     await requireOrganizer(ctx, team.tournamentId);
     await ctx.db.patch(args.playerId, {
       name: args.name ?? player.name,
-      phone: args.phone !== undefined ? args.phone : player.phone,
+      phone: args.phone ? normalizePhone(args.phone) : player.phone,
       role: args.role ?? player.role,
       battingStyle: args.battingStyle !== undefined ? args.battingStyle : player.battingStyle,
       bowlingStyle: args.bowlingStyle !== undefined ? args.bowlingStyle : player.bowlingStyle,
