@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as auth_emailOtp from "../auth/emailOtp.js";
 import type * as career from "../career.js";
 import type * as cricket from "../cricket.js";
+import type * as emails from "../emails.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
 import type * as iplCatalog from "../iplCatalog.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "auth/emailOtp": typeof auth_emailOtp;
   career: typeof career;
   cricket: typeof cricket;
+  emails: typeof emails;
   helpers: typeof helpers;
   http: typeof http;
   iplCatalog: typeof iplCatalog;

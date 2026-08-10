@@ -46,8 +46,8 @@ function BattersTable({ innings }: { innings: InningsView }) {
               <span className="flex items-baseline gap-1.5">
                 <span
                   className={cn(
-                    "truncate text-sm font-bold text-slate-100",
-                    b.status === "out" && "text-slate-500 line-through decoration-1",
+                    "truncate text-sm font-bold text-slate-100 transition-opacity",
+                    b.status === "out" && "text-slate-400/70 opacity-60",
                   )}
                 >
                   {b.name}
@@ -163,6 +163,11 @@ export function InningsPanel({
           {innings.rrr != null && innings.number === 2 && (
             <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-[#22d3ee] led-cyan">
               RRR {innings.rrr}
+            </p>
+          )}
+          {innings.dlsPar != null && innings.number === 2 && (
+            <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-[#a78bfa] led-cyan">
+              DLS Par {innings.dlsPar}
             </p>
           )}
         </div>

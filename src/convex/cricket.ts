@@ -406,3 +406,84 @@ export function teamNRR(
   const rAg = runsAgainst / (ballsAgainst / 6);
   return Number((rFor - rAg).toFixed(3));
 }
+
+// ---- DLS (Duckworth–Lewis–Stern) -------------------------------------------
+
+// Standard T20 DLS resource table: rows are overs remaining (0..20), columns
+// are wickets lost (0, 2, 5, 7, 9). Each cell = % of batting resources left.
+// Published ICC Standard Edition values for 20-over cricket.
+const DLS_T20_RESOURCES: number[][] = [
+  [0.0, 0.0, 0.0, 0.0, 0.0], // 0 overs left
+  [21.7, 18.8, 13.8, 9.2, 4.2],
+  [27.3, 23.7, 17.3, 11.6, 5.3],
+  [32.6, 28.2, 20.5, 13.7, 6.3],
+  [37.7, 32.5, 23.6, 15.8, 7.2],
+  [42.6, 36.6, 26.5, 17.7, 8.1],
+  [47.3, 40.5, 29.3, 19.6, 9.0],
+  [51.8, 44.3, 31.9, 21.3, 9.8],
+  [56.2, 47.9, 34.4, 23.0, 10.5],
+  [60.4, 51.4, 36.8, 24.6, 11.3],
+  [64.5, 54.8, 39.2, 26.2, 12.0], // 10 overs left
+  [68.5, 58.0, 41.4, 27.7, 12.7],
+  [72.4, 61.2, 43.6, 29.2, 13.4],
+  [76.2, 64.3, 45.7, 30.6, 14.0],
+  [79.9, 67.3, 47.8, 31.9, 14.6],
+  [83.5, 70.3, 49.8, 33.2, 15.2],
+  [87.0, 73.1, 51.7, 34.5, 15.8],
+  [90.4, 75.9, 53.6, 35.7, 16.4],
+  [93.7, 78.6, 55.4, 36.8, 16.9],
+  [96.9, 81.2, 57.2, 38.0, 17.4],
+  [100.0, 83.8, 58.9, 39.1, 17.9], // 20 overs left
+];
+const DLS_WICKET_COLS = [0, 2, 5, 7, 9];
+
+/**
+ * Interpolated DLS resource percentage for a given overs remaining + wickets
+ * lost. Used to compute a fair par score for a rain-shortened / interrupted
+ * chase without needing the full ICC tables.
+ */
+export function dlsResourcePercent(
+  oversRemaining: number,
+  wicketsLost: number,
+): number {
+  if (oversRemaining <= 0) return 0;
+  const o = Math.min(20, Math.max(0, oversRemaining));
+  const w = Math.min(9, Math.max(0, wicketsLost));
+  const o0 = Math.floor(o);
+  const o1 = Math.min(20, o0 + 1);
+  const fo = o - o0;
+
+  // locate wicket bracket
+  let w0 = 0;
+  while (w0 < DLS_WICKET_COLS.length - 1 && w > DLS_WICKET_COLS[w0 + 1]) w0++;
+  const w1 = Math.min(DLS_WICKET_COLS.length - 1, w0 + 1);
+  const fw =
+    DLS_WICKET_COLS[w1] - DLS_WICKET_COLS[w0] === 0
+      ? 0
+      : (w - DLS_WICKET_COLS[w0]) / (DLS_WICKET_COLS[w1] - DLS_WICKET_COLS[w0]);
+
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const row = (r: number) => lerp(DLS_T20_RESOURCES[r][w0], DLS_T20_RESOURCES[r][w1], fw);
+  const v0 = row(o0);
+  const v1 = row(o1);
+  return lerp(v0, v1, fo);
+}
+
+/**
+ * DLS par score for the chasing side at the current state — the score they
+ * must be at to be level with the first-innings total after a rain reduction.
+ * `team1` is the completed first innings, `team2` the live chase. Returns null
+ * when a par cannot be meaningfully computed (e.g. no chase yet).
+ */
+export function dlsParScore(
+  team1: { totalRuns: number; ballsBowled: number; wickets: number },
+  team2: { ballsBowled: number; wickets: number },
+  totalOvers: number,
+): number | null {
+  const overs = Math.max(1, totalOvers);
+  const r1Used = 100 - dlsResourcePercent(overs - team1.ballsBowled / 6, team1.wickets);
+  if (r1Used <= 0) return null;
+  const r2Used = 100 - dlsResourcePercent(overs - team2.ballsBowled / 6, team2.wickets);
+  if (r2Used <= 0) return null;
+  return Math.max(0, Math.round((team1.totalRuns * r2Used) / r1Used));
+}

@@ -14,6 +14,7 @@ import {
   buildBallSymbol,
   buildCommentary,
   computeMatchResult,
+  dlsParScore,
   formatOvers,
   isInningsComplete,
   requiredRunRate,
@@ -226,6 +227,22 @@ export const get = query({
           inn.target != null &&
           inn.totalRuns >= inn.target);
 
+      // DLS par score for the chasing side (only meaningful once the first
+      // innings is complete and the chase is underway / still in progress).
+      const firstInn = inningsRows.find((i) => i.number === 1);
+      const dlsPar =
+        inn.number === 2 && firstInn && !isComplete
+          ? dlsParScore(
+              {
+                totalRuns: firstInn.totalRuns,
+                ballsBowled: firstInn.ballsBowled,
+                wickets: firstInn.wickets,
+              },
+              { ballsBowled: inn.ballsBowled, wickets: inn.wickets },
+              match.overs,
+            )
+          : null;
+
       inningsViews.push({
         id: inn._id,
         number: inn.number,
@@ -236,6 +253,7 @@ export const get = query({
         ballsBowled: inn.ballsBowled,
         oversLabel: formatOvers(inn.ballsBowled),
         target: inn.target ?? null,
+        dlsPar,
         striker: inn.strikerId ? (playerMap.get(inn.strikerId) ?? null) : null,
         nonStriker: inn.nonStrikerId ? (playerMap.get(inn.nonStrikerId) ?? null) : null,
         bowler: inn.currentBowlerId ? (playerMap.get(inn.currentBowlerId) ?? null) : null,

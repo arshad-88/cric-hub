@@ -1,6 +1,37 @@
 import { Email } from "@convex-dev/auth/providers/Email";
-import axios from "axios";
 import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
+import { internal } from "../_generated/api";
+
+/**
+ * The @convex-dev/auth runtime calls sendVerificationRequest with a Convex
+ * action ctx as its second argument (see the library's signIn implementation),
+ * but the public EmailConfig type only declares the first parameter. We type
+ * the ctx minimally here so we can hand delivery off to the Node-runtime
+ * Gmail SMTP action in emails.ts (the "From" address is the organizer's own
+ * Gmail inbox — no Freebuff relay involved).
+ */
+type SendCtx = {
+  runAction: (fn: unknown, args: unknown) => Promise<unknown>;
+};
+
+async function sendVerificationRequest(
+  { identifier: email, token }: { identifier: string; token: string },
+  ctx: SendCtx,
+): Promise<void> {
+  try {
+    await ctx.runAction(internal.emails.sendOtp, {
+      to: email,
+      otp: token,
+      appName: process.env.VLY_APP_NAME,
+    });
+  } catch (error) {
+    // Surface a readable message instead of a raw JSON dump of the error
+    // object (that garbage would show up in the sign-in form).
+    const detail =
+      error instanceof Error ? error.message : "unknown error";
+    throw new Error(`Could not deliver the sign-in code: ${detail}`);
+  }
+}
 
 export const emailOtp = Email({
   id: "email-otp",
@@ -15,33 +46,6 @@ export const emailOtp = Email({
     const alphabet = "0123456789";
     return generateRandomString(random, alphabet, 6);
   },
-  async sendVerificationRequest({ identifier: email, token }) {
-    try {
-      await axios.post(
-        "https://auth.freebuff.app/send_otp",
-        {
-          to: email,
-          otp: token,
-          appName: process.env.VLY_APP_NAME || "a freebuff.com application",
-        },
-        {
-          headers: {
-            "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
-          },
-          // Never let a slow/unreachable mail service hang the sign-in step.
-          timeout: 10_000,
-        },
-      );
-    } catch (error) {
-      // Surface a readable message instead of a raw JSON dump of the Axios
-      // error object (that garbage would show up in the sign-in form).
-      const detail =
-        axios.isAxiosError(error) && error.response?.data
-          ? JSON.stringify(error.response.data)
-          : error instanceof Error
-            ? error.message
-            : "unknown error";
-      throw new Error(`Could not deliver the sign-in code: ${detail}`);
-    }
-  },
+  // The runtime passes (params, ctx) — cast the narrower public signature away.
+  sendVerificationRequest: sendVerificationRequest as never,
 });

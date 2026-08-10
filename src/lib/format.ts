@@ -63,6 +63,7 @@ export interface InningsView {
   ballsBowled: number;
   oversLabel: string;
   target: number | null;
+  dlsPar: number | null;
   striker: { _id: string; name: string } | null;
   nonStriker: { _id: string; name: string } | null;
   bowler: { _id: string; name: string } | null;
