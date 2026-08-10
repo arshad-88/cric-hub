@@ -6,6 +6,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { careerPerPlayerId } from "./career";
 import {
   aggregateBatterStats,
   aggregateBowlerStats,
@@ -223,6 +224,117 @@ export const get = query({
       pointsTable,
       topBatters,
       topBowlers,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// career — cross-tournament leaderboard. A phone number identifies one human;
+// every roster doc carrying that number is merged into a single career line,
+// so stats keep growing as the same player appears in more tournaments.
+// ---------------------------------------------------------------------------
+
+export const career = query({
+  args: {},
+  handler: async (ctx) => {
+    const players = await ctx.db.query("players").collect();
+    const users = await ctx.db.query("users").collect();
+    const userByPhone = new Map(
+      users.filter((u) => u.phone).map((u) => [u.phone!, u]),
+    );
+    const teams = await ctx.db.query("teams").collect();
+    const teamById = new Map(teams.map((t) => [t._id, t]));
+
+    // group player docs by identity key (phone when available, else doc id)
+    const groups = new Map<
+      string,
+      {
+        name: string;
+        phone?: string;
+        playerIds: Set<string>;
+        teamIds: Set<string>;
+        tournaments: Set<string>;
+      }
+    >();
+    for (const p of players) {
+      const key = p.phone ?? `p:${p._id}`;
+      let g = groups.get(key);
+      if (!g) {
+        const user = p.phone ? userByPhone.get(p.phone) : null;
+        g = {
+          name: user?.name ?? p.name,
+          phone: p.phone,
+          playerIds: new Set(),
+          teamIds: new Set(),
+          tournaments: new Set(),
+        };
+        groups.set(key, g);
+      }
+      g.playerIds.add(String(p._id));
+      g.teamIds.add(String(p.teamId));
+      const team = teamById.get(p.teamId);
+      if (team) g.tournaments.add(String(team.tournamentId));
+    }
+
+    const perPlayer = await careerPerPlayerId(ctx);
+
+    const batters = [];
+    const bowlers = [];
+    for (const g of groups.values()) {
+      const line = { matches: 0, innings: 0, runs: 0, balls: 0, fours: 0, sixes: 0, wickets: 0, ballsBowled: 0, runsConceded: 0 };
+      for (const pid of g.playerIds) {
+        const l = perPlayer.get(pid);
+        if (!l) continue;
+        line.matches = Math.max(line.matches, l.matches);
+        line.innings += l.innings;
+        line.runs += l.runs;
+        line.balls += l.balls;
+        line.fours += l.fours;
+        line.sixes += l.sixes;
+        line.wickets += l.wickets;
+        line.ballsBowled += l.ballsBowled;
+        line.runsConceded += l.runsConceded;
+      }
+      if (line.balls > 0 || line.runs > 0) {
+        batters.push({
+          key: g.phone ?? "",
+          name: g.name,
+          leagues: g.tournaments.size,
+          runs: line.runs,
+          balls: line.balls,
+          fours: line.fours,
+          sixes: line.sixes,
+          sr: line.balls > 0 ? Number(((line.runs / line.balls) * 100).toFixed(1)) : 0,
+          innings: line.innings,
+          matches: line.matches,
+        });
+      }
+      if (line.ballsBowled > 0 || line.wickets > 0) {
+        bowlers.push({
+          key: g.phone ?? "",
+          name: g.name,
+          leagues: g.tournaments.size,
+          wickets: line.wickets,
+          runs: line.runsConceded,
+          balls: line.ballsBowled,
+          overs: formatOvers(line.ballsBowled),
+          maidens: 0,
+          econ: runRate(line.runsConceded, line.ballsBowled),
+          matches: line.matches,
+        });
+      }
+    }
+
+    batters.sort(
+      (a, b) => b.runs - a.runs || b.sr - a.sr || a.balls - b.balls || a.name.localeCompare(b.name),
+    );
+    bowlers.sort(
+      (a, b) => b.wickets - a.wickets || a.econ - b.econ || a.runs - b.runs || a.name.localeCompare(b.name),
+    );
+
+    return {
+      topBatters: batters.slice(0, 10),
+      topBowlers: bowlers.slice(0, 10),
     };
   },
 });

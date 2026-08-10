@@ -221,6 +221,102 @@ const schema = defineSchema(
       currentBowlerId: v.optional(v.id("players")),
     }).index("by_match", ["matchId"]),
 
+    // ------------------------------------------------------------------
+    // Auction tables — entertainment layer (real IPL + local custom auctions)
+    // ------------------------------------------------------------------
+
+    // auctions — a multiplayer auction room. `pool` is a snapshot of the
+    // players up for bidding; the room advances through it as the auctioneer
+    // calls players. Live bid state (currentBid / currentBidderTeamId /
+    // bidEndsAt) is written on every bid so all joined phones react together.
+    auctions: defineTable({
+      mode: v.union(v.literal("ipl"), v.literal("custom")),
+      title: v.string(),
+      hostId: v.id("users"),
+      hostName: v.string(),
+      tournamentId: v.optional(v.id("tournaments")), // custom mode source
+      purse: v.number(), // starting purse per team, in lakhs
+      squadSize: v.number(),
+      status: v.union(v.literal("SETUP"), v.literal("LIVE"), v.literal("COMPLETED")),
+      roomCode: v.string(), // 6-digit join code
+      pool: v.array(
+        v.object({
+          key: v.string(),
+          name: v.string(),
+          role: v.string(), // Batter / All-rounder / Wicketkeeper / Bowler
+          basePrice: v.number(), // lakhs
+          photoUrl: v.optional(v.string()),
+          wiki: v.optional(v.string()), // Wikipedia title → photo lookup
+          teamShort: v.optional(v.string()), // IPL franchise or local team code
+          career: v.optional(
+            v.object({
+              matches: v.number(),
+              runs: v.number(),
+              wickets: v.number(),
+              sr: v.number(),
+              econ: v.number(),
+            }),
+          ),
+          form: v.optional(
+            v.object({
+              matches: v.number(),
+              runs: v.number(),
+              wickets: v.number(),
+              sr: v.number(),
+              econ: v.number(),
+            }),
+          ),
+        }),
+      ),
+      // live auction state
+      currentIndex: v.optional(v.number()),
+      currentBid: v.optional(v.number()),
+      currentBidderTeamId: v.optional(v.id("auctionTeams")),
+      bidEndsAt: v.optional(v.number()),
+      soldCount: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_room_code", ["roomCode"])
+      .index("by_status", ["status"]),
+
+    // auctionTeams — every joined friend is one franchise in the room.
+    auctionTeams: defineTable({
+      auctionId: v.id("auctions"),
+      ownerId: v.id("users"),
+      name: v.string(),
+      color: v.string(),
+      purseRemaining: v.number(),
+      sold: v.array(
+        v.object({
+          playerKey: v.string(),
+          name: v.string(),
+          role: v.string(),
+          price: v.number(),
+          photoUrl: v.optional(v.string()),
+          wiki: v.optional(v.string()),
+          teamShort: v.optional(v.string()),
+          career: v.optional(
+            v.object({
+              matches: v.number(),
+              runs: v.number(),
+              wickets: v.number(),
+              sr: v.number(),
+              econ: v.number(),
+            }),
+          ),
+          form: v.optional(
+            v.object({
+              matches: v.number(),
+              runs: v.number(),
+              wickets: v.number(),
+              sr: v.number(),
+              econ: v.number(),
+            }),
+          ),
+        }),
+      ),
+    }).index("by_auction", ["auctionId"]),
+
     // deliveries (id, match_id, innings_id, over_number, ball_number, ...)
     deliveries: defineTable({
       matchId: v.id("matches"),

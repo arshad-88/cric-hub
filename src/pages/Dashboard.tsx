@@ -334,13 +334,17 @@ function ProfileCard() {
   const updateProfile = useMutation(api.users.updateProfile);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     try {
-      await updateProfile({ name: name.trim() || undefined });
-      toast.success("Profile updated — organizers will see this name.");
+      await updateProfile({
+        name: name.trim() || undefined,
+        phone: phone.trim() || undefined,
+      });
+      toast.success("Profile updated — this name & number follow you everywhere.");
       setEditing(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save.");
@@ -357,21 +361,37 @@ function ProfileCard() {
         </span>
         <div className="min-w-0 flex-1">
           {editing ? (
-            <div className="flex items-center gap-1.5">
+            <div className="space-y-1.5">
               <Input
                 className="h-8 rounded-none border-border bg-[#0b1524] text-xs text-slate-200"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
               />
-              <Button
-                type="button"
-                disabled={busy}
-                className="h-8 shrink-0 rounded-none bg-[#22c55e] px-2 text-[9px] font-black uppercase tracking-widest text-[#052e16]"
-                onClick={save}
-              >
-                Save
-              </Button>
+              <Input
+                className="h-8 rounded-none border-border bg-[#0b1524] text-xs text-slate-200"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Phone number (player identity)"
+                inputMode="tel"
+              />
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  disabled={busy}
+                  className="h-8 shrink-0 rounded-none bg-[#22c55e] px-2 text-[9px] font-black uppercase tracking-widest text-[#052e16]"
+                  onClick={save}
+                >
+                  Save
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="text-[9px] font-bold uppercase tracking-widest text-slate-500 hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -379,7 +399,7 @@ function ProfileCard() {
                 {user?.name ?? "Player"}
               </p>
               <p className="score-nums truncate text-[10px] font-bold text-slate-500">
-                {user?.phone ?? ""}
+                {user?.phone ?? "No phone set"}
               </p>
             </>
           )}
@@ -389,6 +409,7 @@ function ProfileCard() {
             type="button"
             onClick={() => {
               setName(user?.name ?? "");
+              setPhone(user?.phone ?? "");
               setEditing(true);
             }}
             className="inline-flex shrink-0 items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
@@ -398,8 +419,8 @@ function ProfileCard() {
         )}
       </div>
       <p className="mt-3 border-t border-border pt-3 text-[10px] leading-relaxed text-slate-500">
-        Organizers add players by phone number — the name you set here is what
-        appears on their rosters.
+        Add your phone number — organizers type it when building rosters and
+        your name plus every stat you've ever scored comes along automatically.
       </p>
     </div>
   );
@@ -1054,7 +1075,7 @@ function PlayerForm({
 
   return (
     <div className="grid gap-3 border-b border-border bg-[#0b1524]/60 px-3 py-3 sm:grid-cols-2">
-      <Field label="Phone number — pulls the name" className="sm:col-span-2">
+      <Field label="Phone number — pulls the name & career stats" className="sm:col-span-2">
         <div className="flex items-center gap-2">
           <Input
             className={inputCls}
@@ -1072,6 +1093,18 @@ function PlayerForm({
             </span>
           )}
         </div>
+        {lookup && (
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border border-[#22c55e]/40 bg-[#052e16]/60 px-2.5 py-1.5 text-[10px] font-bold text-slate-300">
+            <span className="text-[#22c55e]">{lookup.name}</span>
+            <span className="score-nums text-slate-400">{lookup.phone}</span>
+            <span className="score-nums text-[#facc15]">{lookup.career.matches} matches</span>
+            <span className="score-nums text-[#facc15]">{lookup.career.runs} runs</span>
+            <span className="score-nums text-[#22d3ee]">{lookup.career.wickets} wkts</span>
+            <span className="score-nums text-slate-400">
+              {lookup.tournaments.length} league{lookup.tournaments.length === 1 ? "" : "s"}
+            </span>
+          </p>
+        )}
       </Field>
       <Field label="Player name">
         <Input

@@ -27,6 +27,8 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard.tsx"));
 const Teams = lazy(() => import("./pages/Teams.tsx"));
 const TeamDetail = lazy(() => import("./pages/TeamDetail.tsx"));
 const Tournaments = lazy(() => import("./pages/Tournaments.tsx"));
+const Auction = lazy(() => import("./pages/Auction.tsx"));
+const AuctionRoom = lazy(() => import("./pages/AuctionRoom.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 /** Legacy /admin/scorer/:matchId → /scorer/:matchId (scoring lives with the match now). */
@@ -165,6 +167,23 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Scorer />
+                  </RequireAuth>
+                }
+              />
+              {/* signed-in auction house — create/join auction rooms */}
+              <Route
+                path="/auction"
+                element={
+                  <RequireAuth>
+                    <Auction />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/auction/:id"
+                element={
+                  <RequireAuth>
+                    <AuctionRoom />
                   </RequireAuth>
                 }
               />

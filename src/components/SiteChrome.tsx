@@ -55,6 +55,7 @@ const NAV = [
   { to: "/tournaments", label: "Tournaments" },
   { to: "/leaderboard", label: "Points & Stats" },
   { to: "/teams", label: "Teams" },
+  { to: "/auction", label: "Auction" },
 ];
 
 export function SiteHeader() {

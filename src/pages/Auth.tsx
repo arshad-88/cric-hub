@@ -2,7 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowRight, Loader2, Phone, User } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Loader2,
+  LockKeyhole,
+  Mail,
+} from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -20,6 +26,8 @@ function resolveRedirectAfterAuth(
   return fallback;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
@@ -29,8 +37,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     redirectAfterAuth,
   );
 
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"email" | "code">("email");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,30 +49,55 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   }, [authLoading, isAuthenticated, navigate, redirect]);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) {
-      setError("Enter a valid 10-digit phone number.");
+  const sendCode = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(trimmed)) {
+      setError("Enter a valid email address (your Gmail works best).");
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      // No OTP, no password — the number is the account.
-      await signIn("phone", {
-        phone: digits,
-        ...(name.trim() ? { name: name.trim() } : {}),
-      });
+      await signIn("email-otp", { email: trimmed });
+      setStep("code");
     } catch (err) {
-      console.error("Phone sign-in error:", err);
+      console.error("OTP send error:", err);
       setError(
         err instanceof Error
           ? err.message
-          : "Could not sign in. Please try again.",
+          : "Could not send the code. Please try again.",
       );
       setIsLoading(false);
     }
+  };
+
+  const verify = async () => {
+    if (code.trim().length < 4) {
+      setError("Enter the 6-digit code we emailed you.");
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signIn("email-otp", {
+        email: email.trim().toLowerCase(),
+        code: code.trim(),
+      });
+      // useAuth's effect navigates to the redirect target once authenticated
+    } catch (err) {
+      console.error("OTP verify error:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "That code did not work — check it and try again.",
+      );
+      setIsLoading(false);
+    }
+  };
+
+  const resend = () => {
+    setCode("");
+    setStep("email");
   };
 
   return (
@@ -94,81 +128,148 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <span className="live-dot relative flex size-2">
                 <span className="relative inline-flex size-2 rounded-full bg-[#ef4444]" />
               </span>
-              <span className="micro-label text-[#22c55e]">Phone sign-in</span>
+              <span className="micro-label text-[#22c55e]">
+                {step === "email" ? "Email sign-in" : "Verify your inbox"}
+              </span>
             </div>
 
-            <h1 className="mt-4 text-2xl font-black uppercase tracking-tight text-white">
-              Enter your number
-            </h1>
-            <p className="mt-2 text-xs leading-relaxed text-slate-400">
-              Your mobile number is your login. No OTP, no password — if the
-              number is new we create your profile instantly, and organizers
-              can pull your name straight from it.
-            </p>
-
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <div className="space-y-1.5">
-                <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
-                  Phone number
-                </Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-3 size-4 text-slate-500" />
-                  <Input
-                    inputMode="tel"
-                    autoComplete="tel"
-                    placeholder="98765 43210"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    disabled={isLoading}
-                    className="h-12 rounded-none border-border bg-[#0b1524] pl-10 text-base text-white placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
-                  Your name <span className="normal-case text-slate-600">(optional, used on rosters)</span>
-                </Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-3 size-4 text-slate-500" />
-                  <Input
-                    placeholder="Ravi Kumar"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={isLoading}
-                    className="h-12 rounded-none border-border bg-[#0b1524] pl-10 text-sm text-white placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30"
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <p className="border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs font-bold text-[#ef4444]">
-                  {error}
+            {step === "email" ? (
+              <>
+                <h1 className="mt-4 text-2xl font-black uppercase tracking-tight text-white">
+                  Sign in with your Gmail
+                </h1>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  Enter your email and we'll send a 6-digit code to that inbox.
+                  No password to remember — the code is your key.
                 </p>
-              )}
 
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="h-12 w-full rounded-none bg-[#22c55e] text-xs font-black uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" /> Signing in…
-                  </>
-                ) : (
-                  <>
-                    Continue <ArrowRight className="ml-2 size-4" />
-                  </>
-                )}
-              </Button>
-            </form>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    sendCode();
+                  }}
+                  className="mt-6 space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                      Email address
+                    </Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 size-4 text-slate-500" />
+                      <Input
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        placeholder="you@gmail.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        disabled={isLoading}
+                        className="h-12 rounded-none border-border bg-[#0b1524] pl-10 text-base text-white placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <p className="border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs font-bold text-[#ef4444]">
+                      {error}
+                    </p>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-12 w-full rounded-none bg-[#22c55e] text-xs font-black uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" /> Sending code…
+                      </>
+                    ) : (
+                      <>
+                        Send code <ArrowRight className="ml-2 size-4" />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h1 className="mt-4 text-2xl font-black uppercase tracking-tight text-white">
+                  Enter the 6-digit code
+                </h1>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  We sent it to{" "}
+                  <span className="font-bold text-[#22c55e]">{email.trim()}</span>.
+                  It expires in 15 minutes.
+                </p>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    verify();
+                  }}
+                  className="mt-6 space-y-4"
+                >
+                  <div className="space-y-1.5">
+                    <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                      One-time code
+                    </Label>
+                    <div className="relative">
+                      <LockKeyhole className="absolute left-3 top-3 size-4 text-slate-500" />
+                      <Input
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="123456"
+                        maxLength={8}
+                        value={code}
+                        onChange={(e) =>
+                          setCode(e.target.value.replace(/\D/g, ""))
+                        }
+                        disabled={isLoading}
+                        className="h-12 rounded-none border-border bg-[#0b1524] pl-10 text-center font-mono text-2xl tracking-[0.4em] text-white placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <p className="border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-xs font-bold text-[#ef4444]">
+                      {error}
+                    </p>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="h-12 w-full rounded-none bg-[#22c55e] text-xs font-black uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" /> Verifying…
+                      </>
+                    ) : (
+                      <>
+                        Sign in <ArrowRight className="ml-2 size-4" />
+                      </>
+                    )}
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={resend}
+                    className="flex w-full items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
+                  >
+                    <ArrowLeft className="size-3" /> Use a different email
+                  </button>
+                </form>
+              </>
+            )}
           </div>
 
           <p className="mt-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-600">
             Viewing scores never needs an account — this is only for creating
-            tournaments and scoring matches.
+            tournaments, scoring matches and joining auctions.
           </p>
         </div>
       </main>
