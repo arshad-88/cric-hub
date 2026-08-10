@@ -1,14 +1,22 @@
 /* CrikHub push service worker.
  * Receives web-push payloads from the Convex backend and shows system
  * notifications; tapping one opens the match center. */
-const SW_VERSION = "crikhub-v1";
+const SW_VERSION = "crikhub-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    (async () => {
+      // Purge caches left by older service workers so a stale app shell can
+      // never be served from disk — the page always loads from the network.
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      await clients.claim();
+    })(),
+  );
 });
 
 self.addEventListener("push", (event) => {
