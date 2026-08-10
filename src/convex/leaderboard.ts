@@ -10,9 +10,11 @@ import { careerPerPlayerId } from "./career";
 import {
   aggregateBatterStats,
   aggregateBowlerStats,
+  countBoundaries,
   formatOvers,
   matchWinnerTeamId,
   runRate,
+  superOverWinnerId,
   teamNRR,
 } from "./cricket";
 import { getActiveTournament } from "./helpers";
@@ -68,24 +70,53 @@ export const get = query({
       const in2 = innings.find((i) => i.number === 2);
       if (!in1) continue;
 
-      const winnerId = matchWinnerTeamId(
-        {
-          battingTeamId: in1.battingTeamId,
-          totalRuns: in1.totalRuns,
-          wickets: in1.wickets,
-          ballsBowled: in1.ballsBowled,
-          target: in1.target ?? undefined,
-        },
-        in2
-          ? {
-              battingTeamId: in2.battingTeamId,
-              totalRuns: in2.totalRuns,
-              wickets: in2.wickets,
-              ballsBowled: in2.ballsBowled,
-              target: in2.target ?? undefined,
-            }
-          : null,
-      );
+      let winnerId: string | null;
+      if (m.superOver) {
+        const in3 = innings.find((i) => i.number === 3);
+        const in4 = innings.find((i) => i.number === 4);
+        const boundariesOf = async (inn: (typeof in3) | null) => {
+          if (!inn) return 0;
+          const ds = await ctx.db
+            .query("deliveries")
+            .withIndex("by_innings", (q) => q.eq("inningsId", inn._id))
+            .collect();
+          return countBoundaries(ds);
+        };
+        winnerId =
+          in3 && in4
+            ? superOverWinnerId(
+                {
+                  battingTeamId: in3.battingTeamId,
+                  totalRuns: in3.totalRuns,
+                  boundaries: await boundariesOf(in3),
+                },
+                {
+                  battingTeamId: in4.battingTeamId,
+                  totalRuns: in4.totalRuns,
+                  boundaries: await boundariesOf(in4),
+                },
+              )
+            : null;
+      } else {
+        winnerId = matchWinnerTeamId(
+          {
+            battingTeamId: in1.battingTeamId,
+            totalRuns: in1.totalRuns,
+            wickets: in1.wickets,
+            ballsBowled: in1.ballsBowled,
+            target: in1.target ?? undefined,
+          },
+          in2
+            ? {
+                battingTeamId: in2.battingTeamId,
+                totalRuns: in2.totalRuns,
+                wickets: in2.wickets,
+                ballsBowled: in2.ballsBowled,
+                target: in2.target ?? undefined,
+              }
+            : null,
+        );
+      }
 
       for (const battingTeamId of [in1.battingTeamId, in2?.battingTeamId]) {
         if (!battingTeamId) continue;

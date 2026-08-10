@@ -5,15 +5,20 @@
 // ---------------------------------------------------------------------------
 
 import { mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { requireOrganizer } from "./helpers";
 import {
   buildCommentary,
   computeMatchResult,
+  computeSuperOverResult,
+  countBoundaries,
   isInningsComplete,
   isLegalBall,
+  isSuperOverComplete,
   replayCrease,
+  superOverWinnerId,
 } from "./cricket";
 import type { DeliveryLike } from "./cricket";
 import { EXTRA_TYPE, extraTypeValidator, wicketTypeValidator } from "./schema";
@@ -106,18 +111,40 @@ export const startInnings = mutation({
       .collect();
     existing.sort((a, b) => a.number - b.number);
 
+    const in1 = existing.find((i) => i.number === 1);
+    const in2 = existing.find((i) => i.number === 2);
+
     let inningsNumber: number;
     if (existing.length === 0) {
       inningsNumber = 1;
-    } else if (existing.length === 1) {
-      const first = existing[0];
-      if (first.number !== 1 || !isInningsComplete(first.wickets, first.ballsBowled, match.overs)) {
+    } else if (existing.length === 1 && in1) {
+      if (!isInningsComplete(in1.wickets, in1.ballsBowled, match.overs)) {
         throw new Error("The current innings is still in progress.");
       }
-      if (args.battingTeamId !== first.bowlingTeamId) {
+      if (args.battingTeamId !== in1.bowlingTeamId) {
         throw new Error("The chasing team must be the side that bowled first.");
       }
       inningsNumber = 2;
+    } else if (existing.length === 2 && in1 && in2 && match.superOver) {
+      // Tied match → Super Over. The side that batted second bats first.
+      const so1 = existing.find((i) => i.number === 3);
+      if (!so1) {
+        if (!isInningsComplete(in2.wickets, in2.ballsBowled, match.overs)) {
+          throw new Error("The current innings is still in progress.");
+        }
+        if (args.battingTeamId !== in2.battingTeamId) {
+          throw new Error("Super Over: the team that batted second bats first.");
+        }
+        inningsNumber = 3;
+      } else {
+        if (!isSuperOverComplete(so1.wickets, so1.ballsBowled)) {
+          throw new Error("The Super Over is still in progress.");
+        }
+        if (args.battingTeamId !== in1.battingTeamId) {
+          throw new Error("Super Over: the team that batted first chases.");
+        }
+        inningsNumber = 4;
+      }
     } else {
       throw new Error("This match already has two innings.");
     }
@@ -129,6 +156,13 @@ export const startInnings = mutation({
       throw new Error("Striker and non-striker must be different players.");
     }
 
+    const so1 = existing.find((i) => i.number === 3);
+    const target =
+      inningsNumber === 2
+        ? in1!.totalRuns + 1
+        : inningsNumber === 4
+          ? so1!.totalRuns + 1
+          : undefined;
     const inningsId = await ctx.db.insert("innings", {
       matchId: match._id,
       number: inningsNumber,
@@ -137,7 +171,8 @@ export const startInnings = mutation({
       totalRuns: 0,
       wickets: 0,
       ballsBowled: 0,
-      target: inningsNumber === 2 ? existing[0].totalRuns + 1 : undefined,
+      target,
+      isSuperOver: inningsNumber >= 3 ? true : undefined,
       openingStrikerId: args.strikerId,
       openingNonStrikerId: args.nonStrikerId,
       strikerId: args.strikerId,
@@ -150,6 +185,30 @@ export const startInnings = mutation({
       currentInningsId: inningsId,
       result: undefined,
     });
+
+    if (inningsNumber === 1) {
+      const [bt, bw] = await Promise.all([
+        ctx.db.get(args.battingTeamId),
+        ctx.db.get(args.bowlingTeamId),
+      ]);
+      await ctx.runMutation(internal.notifications.recordEvent, {
+        matchId: match._id,
+        type: "live",
+        title: "MATCH LIVE!",
+        message: `${bt?.name ?? "?"} v ${bw?.name ?? "?"} — the first ball is coming up`,
+      });
+    } else if (inningsNumber === 3) {
+      const [bt, bw] = await Promise.all([
+        ctx.db.get(args.battingTeamId),
+        ctx.db.get(args.bowlingTeamId),
+      ]);
+      await ctx.runMutation(internal.notifications.recordEvent, {
+        matchId: match._id,
+        type: "superover",
+        title: "SUPER OVER!",
+        message: `${bt?.name ?? "?"} take on ${bw?.name ?? "?"} — one over each, all to play for`,
+      });
+    }
     return { inningsId, number: inningsNumber };
   },
 });
@@ -264,10 +323,19 @@ export const recordDelivery = mutation({
     // ---- load current state (before validation) ---------------------------
     const deliveries = await getDeliveries(ctx, inn._id);
     const wktsSoFar = deliveries.filter((d) => d.isWicket).length;
-    if (isInningsComplete(wktsSoFar, inn.ballsBowled, match.overs)) {
+    const oversAllocated = inn.isSuperOver ? 1 : match.overs;
+    if (
+      inn.isSuperOver
+        ? isSuperOverComplete(wktsSoFar, inn.ballsBowled)
+        : isInningsComplete(wktsSoFar, inn.ballsBowled, oversAllocated)
+    ) {
       throw new Error("This innings is already complete.");
     }
-    if (inn.number === 2 && inn.target != null && inn.totalRuns >= inn.target) {
+    if (
+      (inn.number === 2 || inn.number === 4) &&
+      inn.target != null &&
+      inn.totalRuns >= inn.target
+    ) {
       throw new Error("The chase is already complete.");
     }
 
@@ -369,10 +437,66 @@ export const recordDelivery = mutation({
     if (!rec) throw new Error("Innings disappeared.");
     const { totalRuns: runsNow, wickets: wktsNow, ballsBowled: ballsNow } = rec.inn;
 
+    // ---- live event detection ---------------------------------------------
+    const overLabel = `${overNumber}.${ballNumber}`;
+    const batterRunsBefore = deliveries
+      .filter((d) => d.batsmanId === args.batsmanId)
+      .reduce((s, d) => s + d.runsScored, 0);
+    const batterRunsAfter = batterRunsBefore + args.runsScored;
+    const teamRunsBefore = deliveries.reduce((s, d) => s + d.totalRuns, 0);
+    const teamRunsAfter = teamRunsBefore + totalRuns;
+
+    const teamNameOf = async (teamId: Id<"teams">) =>
+      (await ctx.db.get(teamId))?.name ?? "?";
+
+    if (args.isWicket) {
+      await ctx.runMutation(internal.notifications.recordEvent, {
+        matchId: match._id,
+        type: "wicket",
+        title: "WICKET!",
+        message: commentary,
+        overLabel,
+        inningsNumber: inn.number,
+      });
+    }
+    for (const m of [50, 100]) {
+      if (batterRunsBefore < m && batterRunsAfter >= m) {
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "milestone",
+          title: m === 50 ? "FIFTY!" : "CENTURY!",
+          message: `${batsmanDoc?.name ?? "?"} brings up ${
+            m === 50 ? "a fifty" : "a hundred"
+          }`,
+          overLabel,
+          inningsNumber: inn.number,
+        });
+      }
+    }
+    for (const m of [50, 100, 150, 200]) {
+      if (teamRunsBefore < m && teamRunsAfter >= m) {
+        const btName = await teamNameOf(inn.battingTeamId);
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "team_milestone",
+          title: `${btName} ${m} up`, // e.g. "Warriors 100 up"
+          message: `${btName} reach ${m} — ${runsNow}/${wktsNow} (${overLabel})`,
+          overLabel,
+          inningsNumber: inn.number,
+        });
+      }
+    }
+
     // ---- innings / match completion ----------------------------------------
     const chaseComplete =
-      inn.number === 2 && inn.target != null && runsNow >= inn.target;
-    const complete = chaseComplete || isInningsComplete(wktsNow, ballsNow, match.overs);
+      (inn.number === 2 || inn.number === 4) &&
+      inn.target != null &&
+      runsNow >= inn.target;
+    const complete =
+      chaseComplete ||
+      (inn.isSuperOver
+        ? isSuperOverComplete(wktsNow, ballsNow)
+        : isInningsComplete(wktsNow, ballsNow, oversAllocated));
 
     if (complete) {
       if (inn.number === 1) {
@@ -392,23 +516,87 @@ export const recordDelivery = mutation({
           currentBowlerId: undefined,
         });
         await ctx.db.patch(match._id, { currentInningsId: innings2Id });
+        const btName = await teamNameOf(inn.battingTeamId);
+        const bwName = await teamNameOf(inn.bowlingTeamId);
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "innings",
+          title: "INNINGS BREAK",
+          message: `${btName} close at ${runsNow}/${wktsNow} — ${bwName} need ${runsNow + 1} to win`,
+          overLabel: `${Math.floor(ballsNow / 6)}.${ballsNow % 6}`,
+          inningsNumber: 1,
+        });
         return { ok: true, inningsComplete: true, nextInningsId: innings2Id };
       }
 
-      // innings 2 done → match complete
+      if (inn.number === 3) {
+        // Super over 1 done → auto-create the super over chase.
+        const allSo = await ctx.db
+          .query("innings")
+          .withIndex("by_match", (q) => q.eq("matchId", match._id))
+          .collect();
+        const in1So = allSo.find((i) => i.number === 1);
+        if (!in1So) throw new Error("Super over innings state is broken.");
+        const innings4Id = await ctx.db.insert("innings", {
+          matchId: match._id,
+          number: 4,
+          battingTeamId: in1So.battingTeamId,
+          bowlingTeamId: in1So.bowlingTeamId,
+          totalRuns: 0,
+          wickets: 0,
+          ballsBowled: 0,
+          target: runsNow + 1,
+          isSuperOver: true,
+          openingStrikerId: undefined,
+          openingNonStrikerId: undefined,
+          strikerId: undefined,
+          nonStrikerId: undefined,
+          currentBowlerId: undefined,
+        });
+        await ctx.db.patch(match._id, { currentInningsId: innings4Id });
+        const btName = await teamNameOf(inn.battingTeamId);
+        const bwName = await teamNameOf(in1So.battingTeamId);
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "superover",
+          title: "SUPER OVER 2",
+          message: `${btName} made ${runsNow} — ${bwName} need ${runsNow + 1} off 6 balls`,
+          overLabel: `${Math.floor(ballsNow / 6)}.${ballsNow % 6}`,
+          inningsNumber: 3,
+        });
+        return { ok: true, inningsComplete: true, nextInningsId: innings4Id };
+      }
+
       const all = await ctx.db
         .query("innings")
         .withIndex("by_match", (q) => q.eq("matchId", match._id))
         .collect();
       const in1 = all.find((i) => i.number === 1);
       const in2 = all.find((i) => i.number === 2);
-      let result: string | null = null;
-      if (in1 && in2) {
+
+      if (inn.number === 2 && in1 && in2) {
         const [bat1, bat2] = await Promise.all([
           ctx.db.get(in1.battingTeamId),
           ctx.db.get(in2.battingTeamId),
         ]);
-        result = computeMatchResult(
+        if (in2.totalRuns === in1.totalRuns) {
+          // Tied → Super Over starts internally; the scorer opens it.
+          await ctx.db.patch(match._id, {
+            status: "LIVE",
+            superOver: true,
+            result: undefined,
+            currentInningsId: inn._id,
+          });
+          await ctx.runMutation(internal.notifications.recordEvent, {
+            matchId: match._id,
+            type: "tie",
+            title: "MATCH TIED!",
+            message: `${bat2?.name ?? "?"} and ${bat1?.name ?? "?"} locked on ${in1.totalRuns} — Super Over incoming!`,
+            inningsNumber: 2,
+          });
+          return { ok: true, inningsComplete: true, superOver: true };
+        }
+        const result = computeMatchResult(
           { batting1: bat1?.name ?? "?", batting2: bat2?.name ?? "?" },
           {
             battingTeamId: in1.battingTeamId,
@@ -425,13 +613,61 @@ export const recordDelivery = mutation({
             target: in2.target ?? undefined,
           },
         );
+        await ctx.db.patch(match._id, {
+          status: "COMPLETED",
+          result: result ?? undefined,
+          currentInningsId: inn._id,
+        });
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "result",
+          title: "FULL TIME",
+          message: result ?? "Match complete",
+          inningsNumber: 2,
+        });
+        return { ok: true, inningsComplete: true, matchComplete: true, result };
       }
-      await ctx.db.patch(match._id, {
-        status: "COMPLETED",
-        result: result ?? undefined,
-        currentInningsId: inn._id,
-      });
-      return { ok: true, inningsComplete: true, matchComplete: true, result };
+
+      if (inn.number === 4 && in1 && in2) {
+        // Super over chase complete → resolve the winner.
+        const in3 = all.find((i) => i.number === 3);
+        if (!in3) throw new Error("Super over innings state is broken.");
+        const b3 = await ctx.db.get(in3.battingTeamId);
+        const b4 = await ctx.db.get(inn.battingTeamId);
+        const b3Deliveries = await getDeliveries(ctx, in3._id);
+        const b4Deliveries = await getDeliveries(ctx, inn._id);
+        const winnerId = superOverWinnerId(
+          {
+            battingTeamId: in3.battingTeamId,
+            totalRuns: in3.totalRuns,
+            boundaries: countBoundaries(b3Deliveries),
+          },
+          {
+            battingTeamId: inn.battingTeamId,
+            totalRuns: runsNow,
+            boundaries: countBoundaries(b4Deliveries),
+          },
+        );
+        const result = computeSuperOverResult(
+          { batting3: b3?.name ?? "?", batting4: b4?.name ?? "?" },
+          { totalRuns: in3.totalRuns, wickets: in3.wickets },
+          { totalRuns: runsNow, wickets: wktsNow },
+        );
+        await ctx.db.patch(match._id, {
+          status: "COMPLETED",
+          result,
+          superOver: true,
+          currentInningsId: inn._id,
+        });
+        await ctx.runMutation(internal.notifications.recordEvent, {
+          matchId: match._id,
+          type: "result",
+          title: "SUPER OVER RESULT",
+          message: result,
+          inningsNumber: 4,
+        });
+        return { ok: true, inningsComplete: true, matchComplete: true, result };
+      }
     }
 
     return { ok: true, inningsComplete: false };
@@ -474,7 +710,7 @@ export const undoLastDelivery = mutation({
         if (ds.length > 0) {
           // The empty innings was auto-created — remove it and point the
           // match back at the innings whose final ball we are undoing.
-          if (target.number === 2) {
+          if (target.number > 1) {
             await ctx.db.delete(target._id);
             await ctx.db.patch(match._id, { currentInningsId: cand._id });
           }
@@ -502,11 +738,12 @@ export const undoLastDelivery = mutation({
           .query("innings")
           .withIndex("by_match", (q) => q.eq("matchId", match._id))
           .collect();
-        const in1 = all.find((i) => i.number === 1);
+        // Point back at the previous innings (2 → 1, 3 → 2, 4 → 3).
+        const prev = all.find((i) => i.number === target.number - 1);
         await ctx.db.delete(target._id);
         await ctx.db.patch(match._id, {
           status: "LIVE",
-          currentInningsId: in1?._id,
+          currentInningsId: prev?._id,
           result: undefined,
         });
       }

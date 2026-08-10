@@ -197,6 +197,7 @@ const schema = defineSchema(
       streamUrl: v.optional(v.string()), // YouTube URL/ID or Twitch URL
       currentInningsId: v.optional(v.id("innings")),
       result: v.optional(v.string()), // computed result line once completed
+      superOver: v.optional(v.boolean()), // tied → one-over eliminator in progress
     })
       .index("by_tournament_status", ["tournamentId", "status"])
       .index("by_status", ["status"])
@@ -206,13 +207,14 @@ const schema = defineSchema(
     // innings (id, match_id, batting_team_id, bowling_team_id, totals)
     innings: defineTable({
       matchId: v.id("matches"),
-      number: v.number(), // 1 or 2
+      number: v.number(), // 1, 2 — or 3, 4 for a super over
       battingTeamId: v.id("teams"),
       bowlingTeamId: v.id("teams"),
       totalRuns: v.number(),
       wickets: v.number(),
       ballsBowled: v.number(), // legal balls (overs*6 + balls-in-current-over)
       target: v.optional(v.number()), // set on the chasing innings
+      isSuperOver: v.optional(v.boolean()), // true for innings 3/4 (1 over, 2 wkts)
       // live crease state
       openingStrikerId: v.optional(v.id("players")),
       openingNonStrikerId: v.optional(v.id("players")),
@@ -318,6 +320,53 @@ const schema = defineSchema(
     }).index("by_auction", ["auctionId"]),
 
     // deliveries (id, match_id, innings_id, over_number, ball_number, ...)
+    // ------------------------------------------------------------------
+    // Live match events — the source for in-app web alerts, browser
+    // notifications and web push (wickets, milestones, results, super over).
+    // ------------------------------------------------------------------
+    matchEvents: defineTable({
+      matchId: v.id("matches"),
+      type: v.union(
+        v.literal("wicket"),
+        v.literal("milestone"),
+        v.literal("team_milestone"),
+        v.literal("live"),
+        v.literal("innings"),
+        v.literal("result"),
+        v.literal("tie"),
+        v.literal("superover"),
+      ),
+      title: v.string(),
+      message: v.string(),
+      overLabel: v.optional(v.string()),
+      inningsNumber: v.optional(v.number()),
+    }).index("by_match", ["matchId"]), // _creationTime is auto-appended
+
+    // Web Push subscriptions (service worker push for followed matches).
+    pushSubscriptions: defineTable({
+      endpoint: v.string(),
+      auth: v.string(),
+      p256dh: v.string(),
+      userId: v.optional(v.id("users")),
+    })
+      .index("by_endpoint", ["endpoint"])
+      .index("by_user", ["userId"]),
+
+    // Signed-in users following a match → push target for that match's events.
+    matchFollows: defineTable({
+      userId: v.id("users"),
+      matchId: v.id("matches"),
+    })
+      .index("by_user_match", ["userId", "matchId"])
+      .index("by_match", ["matchId"])
+      .index("by_user", ["userId"]),
+
+    // Key/value app settings (e.g. generated VAPID keypair for web push).
+    settings: defineTable({
+      key: v.string(),
+      value: v.string(),
+    }).index("by_key", ["key"]),
+
     deliveries: defineTable({
       matchId: v.id("matches"),
       inningsId: v.id("innings"),

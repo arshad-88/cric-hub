@@ -56,6 +56,7 @@ export interface OverView {
 export interface InningsView {
   id: string;
   number: number;
+  isSuperOver: boolean;
   battingTeam: TeamLite;
   bowlingTeam: TeamLite;
   totalRuns: number;
@@ -92,6 +93,7 @@ export interface Scorecard {
     tossWinnerId?: string;
     tossDecision?: "bat" | "bowl";
     currentInningsId?: string;
+    superOver: boolean;
   };
   tournament: { id: string; name: string; year: number };
   teamA: TeamLite;
@@ -101,6 +103,12 @@ export interface Scorecard {
   currentInnings: InningsView | null;
   result: string | null;
   live: boolean;
+  prediction: {
+    teamA: number;
+    teamB: number;
+    summary: string;
+    projected?: number;
+  };
 }
 
 export type TournamentStatus = "ACTIVE" | "UPCOMING" | "PAST";
@@ -136,6 +144,7 @@ export interface MatchRow {
   inningsSummary?: string | null;
   teamA?: TeamLite | null;
   teamB?: TeamLite | null;
+  superOver?: boolean;
 }
 
 export interface PointsRow {

@@ -1,20 +1,25 @@
 import { api } from "@/convex/_generated/api";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
-import { InningsPanel } from "@/components/InningsPanel";
+import { InningsPanel, inningsLabel } from "@/components/InningsPanel";
+import { WinPredictor } from "@/components/WinPredictor";
 import { CommentaryFeed } from "@/components/CommentaryFeed";
 import { StreamEmbed } from "@/components/StreamEmbed";
 import { PointsTable } from "@/components/PointsTable";
 import { BallChip, MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
 import { formatDate, formatTime, type InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
+  Bell,
+  BellRing,
   Calendar,
   Clapperboard,
   MapPin,
   Trophy,
+  Zap,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -32,8 +37,13 @@ const TABS: { key: TabKey; label: string }[] = [
 
 export default function MatchDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<TabKey>("scorecard");
   const scorecard = useQuery(api.scorecard.get, id ? { matchId: id as Id<"matches"> } : "skip");
+  const follows = useQuery(api.notifications.myFollows);
+  const followMatch = useMutation(api.notifications.followMatch);
+  const unfollowMatch = useMutation(api.notifications.unfollowMatch);
+  const isFollowing = follows ? follows.includes(id ?? "") : false;
 
   const teamASquad = useQuery(
     api.players.listByTeam,
@@ -161,11 +171,51 @@ export default function MatchDetail() {
               {result}
             </p>
           )}
+          {match.superOver && !result && (
+            <p className="mt-3 flex items-center gap-2 border-l-4 border-[#facc15] bg-[#422006]/50 px-4 py-2.5 text-sm font-black uppercase tracking-wide text-[#facc15]">
+              <Zap className="size-4" /> Match tied — Super Over underway
+            </p>
+          )}
           {toss && (
             <p className="mt-3 text-[11px] font-medium uppercase tracking-widest text-slate-500">
               Toss — {toss}
             </p>
           )}
+
+          {/* outcome predictor + follow */}
+          <div className="mt-4">
+            <WinPredictor
+              prediction={scorecard.prediction}
+              teamA={teamA}
+              teamB={teamB}
+              status={match.status}
+              superOver={match.superOver}
+            />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <FollowMatchButton
+              matchId={match.id}
+              isFollowing={isFollowing}
+              onToggle={async () => {
+                try {
+                  if (isFollowing) {
+                    await unfollowMatch({ matchId: match.id as Id<"matches"> });
+                    toast.success("Unfollowed — no more alerts for this match.");
+                  } else {
+                    await followMatch({ matchId: match.id as Id<"matches"> });
+                    toast.success("Following — get push alerts for every key moment.");
+                  }
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : "";
+                  if (/sign in/i.test(msg)) {
+                    navigate("/auth?returnTo=" + encodeURIComponent(`/matches/${match.id}`));
+                  } else {
+                    toast.error(msg || "Could not update follow state.");
+                  }
+                }
+              }}
+            />
+          </div>
         </motion.div>
 
         {/* ===== tabs ===== */}
@@ -308,7 +358,7 @@ function OversTab({ innings, live }: { innings: InningsView[]; live: boolean }) 
             <span className="flex items-center gap-2">
               <TeamMark shortCode={inn.battingTeam.shortCode} color={inn.battingTeam.color} size="sm" />
               <span className="text-xs font-extrabold uppercase tracking-wide text-white">
-                {inn.number === 1 ? "1st innings" : "2nd innings"}
+                {inningsLabel(inn.number)}
               </span>
             </span>
             <span className="score-nums text-sm font-black text-white">
@@ -392,6 +442,41 @@ function XIPanel({
         )}
       </ul>
     </div>
+  );
+}
+
+function FollowMatchButton({
+  matchId,
+  isFollowing,
+  onToggle,
+}: {
+  matchId: string;
+  isFollowing: boolean;
+  onToggle: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await onToggle();
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={cn(
+        "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest transition-colors disabled:opacity-50",
+        isFollowing
+          ? "border-[#facc15] bg-[#422006] text-[#facc15] hover:bg-[#facc15] hover:text-[#422006]"
+          : "border-border bg-card text-slate-300 hover:border-[#facc15] hover:text-[#facc15]",
+      )}
+    >
+      {isFollowing ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
+      {isFollowing ? "Following · alerts on" : "Follow match"}
+    </button>
   );
 }
 

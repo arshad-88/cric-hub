@@ -2,6 +2,13 @@ import { BallChip, MicroLabel, TeamMark } from "@/components/swiss";
 import type { InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+/** "1st innings" / "2nd innings" / "Super Over 1" / "Super Over 2". */
+export function inningsLabel(number: number): string {
+  if (number === 1) return "1st innings";
+  if (number === 2) return "2nd innings";
+  return number === 3 ? "Super Over 1" : "Super Over 2";
+}
+
 function BallsRow({ innings }: { innings: InningsView }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
@@ -142,7 +149,7 @@ export function InningsPanel({
         <TeamMark shortCode={innings.battingTeam.shortCode} color={innings.battingTeam.color} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            {innings.number === 1 ? "1st innings" : "2nd innings"} · {innings.battingTeam.name}
+            {inningsLabel(innings.number)} · {innings.battingTeam.name}
           </p>
           <p className="score-nums text-2xl font-extrabold leading-none text-white">
             {innings.totalRuns}/{innings.wickets}

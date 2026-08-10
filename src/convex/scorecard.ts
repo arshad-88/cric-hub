@@ -17,8 +17,12 @@ import {
   dlsParScore,
   formatOvers,
   isInningsComplete,
+  isSuperOverComplete,
+  matchPrediction,
+  matchWinnerTeamId,
   requiredRunRate,
   runRate,
+  superOverWinnerId,
 } from "./cricket";
 import { EXTRA_TYPE, WICKET_TYPE } from "./schema";
 import type { WicketType } from "./schema";
@@ -222,8 +226,10 @@ export const get = query({
         (!match.currentInningsId &&
           inn.number === inningsRows[inningsRows.length - 1]?.number);
       const isComplete =
-        isInningsComplete(inn.wickets, inn.ballsBowled, match.overs) ||
-        (inn.number === 2 &&
+        (inn.isSuperOver
+          ? isSuperOverComplete(inn.wickets, inn.ballsBowled)
+          : isInningsComplete(inn.wickets, inn.ballsBowled, match.overs)) ||
+        ((inn.number === 2 || inn.number === 4) &&
           inn.target != null &&
           inn.totalRuns >= inn.target);
 
@@ -246,6 +252,7 @@ export const get = query({
       inningsViews.push({
         id: inn._id,
         number: inn.number,
+        isSuperOver: inn.isSuperOver ?? false,
         battingTeam: teamLite(battingTeam),
         bowlingTeam: teamLite(bowlingTeam),
         totalRuns: inn.totalRuns,
@@ -272,6 +279,8 @@ export const get = query({
 
     const in1 = inningsViews.find((i) => i.number === 1) ?? null;
     const in2 = inningsViews.find((i) => i.number === 2) ?? null;
+    const in3 = inningsViews.find((i) => i.number === 3) ?? null;
+    const in4 = inningsViews.find((i) => i.number === 4) ?? null;
     const result =
       match.result ??
       (match.status === "COMPLETED" && in1 && in2
@@ -294,8 +303,107 @@ export const get = query({
           )
         : null);
 
+    // ---- outcome predictor -------------------------------------------------
+    // League average first-innings total (completed matches of this
+    // tournament) — the baseline for in-play projections.
+    const allMatches = await ctx.db
+      .query("matches")
+      .withIndex("by_tournament_status", (q) =>
+        q.eq("tournamentId", tournament._id),
+      )
+      .collect();
+    let avgFirstInnings: number | null = null;
+    {
+      const totals: number[] = [];
+      for (const m of allMatches) {
+        if (m.status !== "COMPLETED") continue;
+        const inns = await ctx.db
+          .query("innings")
+          .withIndex("by_match", (q) => q.eq("matchId", m._id))
+          .collect();
+        const f = inns.find((i) => i.number === 1);
+        if (f) totals.push(f.totalRuns);
+      }
+      if (totals.length > 0) {
+        avgFirstInnings = totals.reduce((s, x) => s + x, 0) / totals.length;
+      }
+    }
+
+    const boundariesIn = (inn: NonNullable<typeof in3>) =>
+      inn.overs.reduce(
+        (s, o) => s + o.balls.filter((b) => b.kind === "boundary").length,
+        0,
+      );
+
+    let winnerTeamId: string | null = null;
+    if (match.status === "COMPLETED" && in1 && in2) {
+      if (in3 && in4) {
+        winnerTeamId = superOverWinnerId(
+          {
+            battingTeamId: in3.battingTeam._id,
+            totalRuns: in3.totalRuns,
+            boundaries: boundariesIn(in3),
+          },
+          {
+            battingTeamId: in4.battingTeam._id,
+            totalRuns: in4.totalRuns,
+            boundaries: boundariesIn(in4),
+          },
+        );
+      } else {
+        winnerTeamId = matchWinnerTeamId(
+          {
+            battingTeamId: in1.battingTeam._id,
+            totalRuns: in1.totalRuns,
+            wickets: in1.wickets,
+            ballsBowled: in1.ballsBowled,
+            target: in1.target ?? undefined,
+          },
+          {
+            battingTeamId: in2.battingTeam._id,
+            totalRuns: in2.totalRuns,
+            wickets: in2.wickets,
+            ballsBowled: in2.ballsBowled,
+            target: in2.target ?? undefined,
+          },
+        );
+      }
+    }
+
     const currentInnings =
       inningsViews.find((i) => i.isCurrent) ?? inningsViews[inningsViews.length - 1] ?? null;
+
+    const prediction = matchPrediction({
+      status: match.status,
+      teamAName: teamA.name,
+      teamBName: teamB.name,
+      battingTeamName: currentInnings?.battingTeam.name ?? null,
+      winnerTeamId:
+        winnerTeamId === null
+          ? null
+          : winnerTeamId === teamA._id
+            ? "A"
+            : "B",
+      in1: in1
+        ? {
+            totalRuns: in1.totalRuns,
+            wickets: in1.wickets,
+            ballsBowled: in1.ballsBowled,
+          }
+        : null,
+      in2: in2
+        ? {
+            totalRuns: in2.totalRuns,
+            wickets: in2.wickets,
+            ballsBowled: in2.ballsBowled,
+            target: in2.target,
+          }
+        : null,
+      dlsPar: in2?.dlsPar ?? null,
+      avgFirstInnings,
+      result: result ?? null,
+      superOver: match.superOver ?? false,
+    });
 
     return {
       match: {
@@ -310,6 +418,7 @@ export const get = query({
         tossWinnerId: match.tossWinnerId,
         tossDecision: match.tossDecision,
         currentInningsId: match.currentInningsId,
+        superOver: match.superOver ?? false,
       },
       tournament: {
         id: tournament._id,
@@ -323,6 +432,7 @@ export const get = query({
       currentInnings,
       result,
       live: match.status === "LIVE",
+      prediction,
     };
   },
 });

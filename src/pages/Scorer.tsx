@@ -133,7 +133,17 @@ export default function Scorer() {
   const needsStart = !current;
   const needsOpeners = current != null && !current.striker && !current.isComplete;
   const newOver = current != null && !current.isComplete && current.ballsBowled > 0 && current.ballsBowled % 6 === 0;
-  const matchOver = current?.isComplete && current.number === 2;
+  // A match is only over once a result is locked in — a tied match stays live
+  // so the scorer can open the Super Over.
+  const matchOver = !!match.result;
+  const currentOver = current?.isComplete ?? false;
+  const superOverReady =
+    match.superOver &&
+    !matchOver &&
+    (current === null || (current.number === 2 && current.isComplete));
+  const superOverSource = scorecard.innings.find((i) => i.number === 2) ?? current;
+  const soBattingTeamId = (superOverSource?.battingTeam._id ?? "") as Id<"teams">;
+  const soBowlingTeamId = (superOverSource?.bowlingTeam._id ?? "") as Id<"teams">;
 
   const strikerCard = current?.batters.find((b) => b.isStriker);
   const nonStrikerCard = current?.batters.find((b) => b.isNonStriker);
@@ -275,7 +285,15 @@ export default function Scorer() {
           </div>
         )}
 
-        {needsStart && (
+        {superOverReady && (
+          <SuperOverStartPanel
+            matchId={match.id}
+            battingTeamId={soBattingTeamId}
+            bowlingTeamId={soBowlingTeamId}
+          />
+        )}
+
+        {!superOverReady && needsStart && (
           <StartInningsPanel matchId={match.id} teamA={teamA} teamB={teamB} />
         )}
 
@@ -293,11 +311,13 @@ export default function Scorer() {
           </>
         )}
 
-        {!needsStart && !needsOpeners && current && (
+        {!superOverReady && !needsStart && !needsOpeners && current && (
           <>
-            {matchOver && (
+            {currentOver && (
               <p className="mb-3 border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
-                Match is over — use Undo below to correct the final score
+                {match.superOver && current.number >= 3
+                  ? "Super Over over — final scores are in"
+                  : "Innings over — set the new innings up to continue"}
               </p>
             )}
             {/* crease */}
@@ -359,7 +379,7 @@ export default function Scorer() {
                 <button
                   key={r}
                   type="button"
-                  disabled={busy || matchOver}
+                  disabled={busy || currentOver}
                   onClick={() => tap(r)}
                   className={cn(
                     "score-nums py-5 text-2xl font-extrabold transition-transform active:scale-95",
@@ -373,7 +393,7 @@ export default function Scorer() {
               ))}
               <button
                 type="button"
-                disabled={busy || matchOver}
+                disabled={busy || currentOver}
                 onClick={() => setWicketOpen(true)}
                 className="score-nums bg-[#ef4444] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -381,7 +401,7 @@ export default function Scorer() {
               </button>
               <button
                 type="button"
-                disabled={busy || matchOver}
+                disabled={busy || currentOver}
                 onClick={() => setExtraOpen("wide")}
                 className="border-2 border-[#facc15] bg-[#422006] text-sm font-extrabold text-[#facc15] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -389,7 +409,7 @@ export default function Scorer() {
               </button>
               <button
                 type="button"
-                disabled={busy || matchOver}
+                disabled={busy || currentOver}
                 onClick={() => setExtraOpen("noball")}
                 className="border-2 border-[#22d3ee] bg-[#083344] text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -397,7 +417,7 @@ export default function Scorer() {
               </button>
               <button
                 type="button"
-                disabled={busy || matchOver}
+                disabled={busy || currentOver}
                 onClick={() => setExtraOpen("bye")}
                 className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -405,7 +425,7 @@ export default function Scorer() {
               </button>
               <button
                 type="button"
-                disabled={busy || matchOver}
+                disabled={busy || currentOver}
                 onClick={() => setExtraOpen("legbye")}
                 className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -451,6 +471,7 @@ export default function Scorer() {
         <WicketDialog
           strikerId={striker?._id ?? null}
           wicketsSoFar={current.wickets}
+          superOver={current?.isSuperOver ?? false}
           battingSquad={battingSquad ?? []}
           bowlingSquad={bowlingSquad ?? []}
           onCancel={() => setWicketOpen(false)}
@@ -700,6 +721,79 @@ function StartInningsPanel({
   );
 }
 
+/** Tied match → one-over eliminator. The team that batted second bats first. */
+function SuperOverStartPanel({
+  matchId,
+  battingTeamId,
+  bowlingTeamId,
+}: {
+  matchId: string;
+  battingTeamId: Id<"teams">;
+  bowlingTeamId: Id<"teams">;
+}) {
+  const startInnings = useMutation(api.scoring.startInnings);
+  const [striker, setStriker] = useState("");
+  const [nonStriker, setNonStriker] = useState("");
+  const [bowler, setBowler] = useState("");
+  const [busy, setBusy] = useState(false);
+  const battingSquad = useQuery(
+    api.players.listByTeam,
+    battingTeamId ? { teamId: battingTeamId } : "skip",
+  );
+  const bowlingSquad = useQuery(
+    api.players.listByTeam,
+    bowlingTeamId ? { teamId: bowlingTeamId } : "skip",
+  );
+
+  const submit = async () => {
+    if (!striker || !nonStriker || !bowler) {
+      toast.error("Pick the two batters and the bowler for the Super Over.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await startInnings({
+        matchId: matchId as Id<"matches">,
+        battingTeamId,
+        bowlingTeamId,
+        strikerId: striker as Id<"players">,
+        nonStrikerId: nonStriker as Id<"players">,
+        bowlerId: bowler as Id<"players">,
+      });
+      toast.success("Super Over underway — 1 over each!");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start the Super Over.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-2 border-[#facc15] bg-card p-4 panel-glow">
+      <MicroLabel className="text-[#facc15]">Match tied — Super Over</MicroLabel>
+      <p className="mt-1 text-xs text-slate-500">
+        One over each, 2 wickets per innings. The team that batted second in the
+        match bats first now. Pick the pair and the bowler.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Picker label="Striker" value={striker} onChange={setStriker} players={battingSquad ?? []} />
+        <Picker label="Non-striker" value={nonStriker} onChange={setNonStriker} players={battingSquad ?? []} />
+      </div>
+      <div className="mt-2">
+        <Picker label="First bowler" value={bowler} onChange={setBowler} players={bowlingSquad ?? []} />
+      </div>
+      <Button
+        type="button"
+        onClick={submit}
+        disabled={busy}
+        className="mt-3 w-full rounded-none bg-[#facc15] uppercase text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]"
+      >
+        Start Super Over
+      </Button>
+    </div>
+  );
+}
+
 /** Used when innings 2 opens (or innings state was reset). */
 function OpenersPanel({
   inningsId,
@@ -795,6 +889,7 @@ function Picker({
 function WicketDialog({
   strikerId,
   wicketsSoFar,
+  superOver,
   battingSquad,
   bowlingSquad,
   onCancel,
@@ -802,6 +897,7 @@ function WicketDialog({
 }: {
   strikerId: string | null;
   wicketsSoFar: number;
+  superOver: boolean;
   battingSquad: PlayerDoc[];
   bowlingSquad: PlayerDoc[];
   onCancel: () => void;
@@ -819,8 +915,8 @@ function WicketDialog({
   const [fielder, setFielder] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // The 10th wicket ends the innings — no replacement comes in.
-  const isFinalWicket = wicketsSoFar + 1 >= 10;
+  // The 10th wicket ends a normal innings; a Super Over ends after 2 wickets.
+  const isFinalWicket = wicketsSoFar + 1 >= (superOver ? 2 : 10);
   const needsFielder = wicketType === "Caught" || wicketType === "Run out" || wicketType === "Stumped";
   const available = battingSquad.filter((p) => p._id !== dismissed);
 
@@ -875,7 +971,7 @@ function WicketDialog({
           <Picker label="Dismissed batter" value={dismissed} onChange={setDismissed} players={battingSquad} />
           {isFinalWicket ? (
             <p className="border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
-              That's the 10th wicket — innings over
+              {superOver ? "That's 2 wickets — Super Over over" : "That's the 10th wicket — innings over"}
             </p>
           ) : (
             <Picker label="New batter in" value={newBatsman} onChange={setNewBatsman} players={available} />

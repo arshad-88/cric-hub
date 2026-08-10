@@ -20,6 +20,8 @@ import type * as http from "../http.js";
 import type * as iplCatalog from "../iplCatalog.js";
 import type * as leaderboard from "../leaderboard.js";
 import type * as matches from "../matches.js";
+import type * as notifications from "../notifications.js";
+import type * as notificationsPush from "../notificationsPush.js";
 import type * as players from "../players.js";
 import type * as scorecard from "../scorecard.js";
 import type * as scoring from "../scoring.js";
@@ -47,6 +49,8 @@ declare const fullApi: ApiFromModules<{
   iplCatalog: typeof iplCatalog;
   leaderboard: typeof leaderboard;
   matches: typeof matches;
+  notifications: typeof notifications;
+  notificationsPush: typeof notificationsPush;
   players: typeof players;
   scorecard: typeof scorecard;
   scoring: typeof scoring;

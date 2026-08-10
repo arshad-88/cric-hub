@@ -487,3 +487,171 @@ export function dlsParScore(
   if (r2Used <= 0) return null;
   return Math.max(0, Math.round((team1.totalRuns * r2Used) / r1Used));
 }
+
+// ---- super over (tie-breaker) ----------------------------------------------
+
+/** A super over innings ends after 2 wickets or 6 balls, whichever comes first. */
+export function isSuperOverComplete(wickets: number, ballsBowled: number): boolean {
+  return wickets >= 2 || ballsBowled >= 6;
+}
+
+/** Number of boundaries (4s + 6s) in an innings — the super-over tie-breaker. */
+export function countBoundaries(
+  deliveries: { runsScored: number }[],
+): number {
+  return deliveries.filter((d) => d.runsScored === 4 || d.runsScored === 6).length;
+}
+
+/**
+ * Resolve a tied match's super over. `in3` is the super over where the team
+ * that batted second in the match batted first; `in4` is the chase. The side
+ * with the higher super-over total wins; on an exact tie the side with more
+ * boundaries in the super over wins. Returns the winning team id or null if
+ * genuinely unbreakable.
+ */
+export function superOverWinnerId(
+  in3: { battingTeamId: string; totalRuns: number; boundaries: number },
+  in4: { battingTeamId: string; totalRuns: number; boundaries: number },
+): string | null {
+  if (in4.totalRuns !== in3.totalRuns) {
+    return in4.totalRuns > in3.totalRuns ? in4.battingTeamId : in3.battingTeamId;
+  }
+  if (in4.boundaries !== in3.boundaries) {
+    return in4.boundaries > in3.boundaries ? in4.battingTeamId : in3.battingTeamId;
+  }
+  return null;
+}
+
+export function computeSuperOverResult(
+  teamNames: { batting3: string; batting4: string },
+  in3: { totalRuns: number; wickets: number },
+  in4: { totalRuns: number; wickets: number },
+): string {
+  if (in4.totalRuns >= in3.totalRuns + 1) {
+    const hand = Math.max(1, 2 - in4.wickets);
+    return `${teamNames.batting4} won the Super Over by ${hand} wicket${
+      hand === 1 ? "" : "s"
+    }`;
+  }
+  if (in4.totalRuns === in3.totalRuns) {
+    return `Super Over tied — ${teamNames.batting3} & ${teamNames.batting4} share the honours`;
+  }
+  const margin = in3.totalRuns - in4.totalRuns;
+  return `${teamNames.batting3} won the Super Over by ${margin} run${
+    margin === 1 ? "" : "s"
+  }`;
+}
+
+// ---- match outcome predictor ------------------------------------------------
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+
+/**
+ * Live win-probability model (ESPN-style). Chases are scored from the DLS par
+ * margin; a first innings in progress is scored from the projected total vs the
+ * tournament's average first-innings score. Returns probabilities for teamA /
+ * teamB plus a short broadcast-style summary line.
+ */
+export function matchPrediction(input: {
+  status: "UPCOMING" | "LIVE" | "COMPLETED";
+  teamAName: string;
+  teamBName: string;
+  /** The team currently at the crease (batting team of the live innings). */
+  battingTeamName: string | null;
+  /** Resolved winner team id once the match is decided (incl. super over). */
+  winnerTeamId?: string | null;
+  in1?: { totalRuns: number; wickets: number; ballsBowled: number } | null;
+  in2?: {
+    totalRuns: number;
+    wickets: number;
+    ballsBowled: number;
+    target: number | null;
+  } | null;
+  dlsPar?: number | null;
+  avgFirstInnings?: number | null;
+  result?: string | null;
+  superOver?: boolean;
+}): {
+  teamA: number;
+  teamB: number;
+  summary: string;
+  projected?: number;
+} {
+  const { status, teamAName, teamBName } = input;
+
+  if (status === "COMPLETED") {
+    if (input.winnerTeamId == null || input.result === "Match tied") {
+      return { teamA: 50, teamB: 50, summary: input.result ?? "Match tied" };
+    }
+    const favA = input.winnerTeamId === "A";
+    return favA
+      ? { teamA: 100, teamB: 0, summary: input.result ?? `${teamAName} won` }
+      : { teamA: 0, teamB: 100, summary: input.result ?? `${teamBName} won` };
+  }
+
+  if (status === "UPCOMING") {
+    return {
+      teamA: 50,
+      teamB: 50,
+      summary: "Even contest — toss & form will decide.",
+    };
+  }
+
+  // ---- live ----------------------------------------------------------------
+  if (input.superOver) {
+    return {
+      teamA: 50,
+      teamB: 50,
+      summary: "Super Over — one over, everything to play for!",
+    };
+  }
+
+  const in1 = input.in1;
+  const in2 = input.in2;
+  const battingName = input.battingTeamName;
+
+  // Chase (in progress or about to start) → DLS par margin drives the model.
+  if (in2 && in2.target != null && battingName) {
+    if (input.dlsPar == null) {
+      const pct = 50;
+      const summary =
+        in2.ballsBowled === 0
+          ? `${battingName} begin the chase — target ${in2.target}`
+          : `${battingName} need ${Math.max(0, in2.target - in2.totalRuns)} · ${pct}% to win`;
+      return battingName === teamAName
+        ? { teamA: pct, teamB: 100 - pct, summary }
+        : { teamA: 100 - pct, teamB: pct, summary };
+    }
+    const margin = in2.totalRuns - input.dlsPar;
+    const pChase = clamp(sigmoid(0.07 * margin), 0.05, 0.95);
+    const ballsLeft = Math.max(0, 120 - in2.ballsBowled);
+    const need = Math.max(0, in2.target - in2.totalRuns);
+    const summary =
+      need === 0
+        ? `${battingName} are there — win probability locked`
+        : `${battingName} need ${need} off ${ballsLeft} · ${Math.round(pChase * 100)}% to chase`;
+    const pct = Math.round(pChase * 100);
+    return battingName === teamAName
+      ? { teamA: pct, teamB: 100 - pct, summary }
+      : { teamA: 100 - pct, teamB: pct, summary };
+  }
+
+  // First innings in progress → projected total vs league average.
+  if (in1 && battingName) {
+    const ballsLeft = Math.max(0, 120 - in1.ballsBowled);
+    const crr = in1.ballsBowled > 0 ? (in1.totalRuns / in1.ballsBowled) * 6 : 0;
+    const projected = Math.round(in1.totalRuns + (crr * ballsLeft) / 6);
+    const avg = input.avgFirstInnings;
+    const p = avg ? clamp(sigmoid(0.025 * (projected - avg)), 0.05, 0.95) : 0.5;
+    const pct = Math.round(p * 100);
+    const summary = avg
+      ? `${battingName} projected ${projected} (avg ${Math.round(avg)}) · ${pct}% to win`
+      : `${battingName} projected ${projected}`;
+    return battingName === teamAName
+      ? { teamA: pct, teamB: 100 - pct, summary, projected }
+      : { teamA: 100 - pct, teamB: pct, summary, projected };
+  }
+
+  return { teamA: 50, teamB: 50, summary: "Waiting for the first ball…" };
+}
