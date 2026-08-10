@@ -17,6 +17,14 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 type Mode = "tournament" | "career";
 
+/** Public leaderboards never reveal full phone numbers — only the last 4 digits. */
+function maskPhone(key: string): string {
+  if (!key) return "";
+  const digits = key.replace(/\D/g, "");
+  if (digits.length < 6) return key;
+  return `••••• ${digits.slice(-4)}`;
+}
+
 export default function Leaderboard() {
   const tournaments = useQuery(api.tournaments.list);
   const active = useQuery(api.tournaments.getActive);
@@ -253,7 +261,7 @@ function CareerBoard({
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-bold text-slate-100">{b.name}</span>
                     <span className="score-nums block truncate text-[10px] font-bold text-slate-500">
-                      {b.key || "—"}
+                      {maskPhone(b.key) || "—"}
                     </span>
                   </span>
                 </span>
@@ -293,7 +301,7 @@ function CareerBoard({
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-bold text-slate-100">{b.name}</span>
                     <span className="score-nums block truncate text-[10px] font-bold text-slate-500">
-                      {b.key || "—"}
+                      {maskPhone(b.key) || "—"}
                     </span>
                   </span>
                 </span>

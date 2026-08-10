@@ -66,15 +66,21 @@ function aggregateRows(
   const matches = new Set<string>();
   const innings = new Set<string>();
   for (const d of rows) {
+    // Only deliveries this player was involved in count toward their match /
+    // innings totals — otherwise every player would inherit the whole
+    // database's match count from the shared snapshot.
+    const isBatter = ids.has(d.batsmanId);
+    const isBowler = ids.has(d.bowlerId);
+    if (!isBatter && !isBowler) continue;
     matches.add(d.matchId);
     innings.add(d.inningsId);
-    if (ids.has(d.batsmanId)) {
+    if (isBatter) {
       if (isLegalBall(d.extraType)) out.balls += 1;
       out.runs += d.runsScored;
       if (d.runsScored === 4) out.fours += 1;
       if (d.runsScored === 6) out.sixes += 1;
     }
-    if (ids.has(d.bowlerId)) {
+    if (isBowler) {
       if (isLegalBall(d.extraType)) out.ballsBowled += 1;
       out.runsConceded += d.totalRuns;
       if (bowlerCredited(d)) out.wickets += 1;

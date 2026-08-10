@@ -613,7 +613,15 @@ function TournamentDirectory({ tournaments }: { tournaments: TournamentRow[] }) 
               {t.status} · {t.teamsCount} teams · {t.matchesCount} matches
             </span>
           </span>
-          <StatusPill status={t.status as "UPCOMING" | "LIVE" | "COMPLETED"} />
+          <StatusPill
+            status={
+              t.status === "ACTIVE"
+                ? "LIVE"
+                : t.status === "UPCOMING"
+                  ? "UPCOMING"
+                  : "COMPLETED"
+            }
+          />
           <Link
             to={`/matches?tournament=${t.id}`}
             className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-[#22d3ee] hover:underline"

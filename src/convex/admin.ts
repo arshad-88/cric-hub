@@ -43,20 +43,28 @@ export const hubStats = query({
       };
     }
 
-    // Organizer identities (names + phones) for the manage panel.
-    const organizerDocs = tournament
-      ? (
-          await Promise.all(
-            (tournament.organizers ?? []).map((id) => ctx.db.get(id)),
-          )
-        ).filter((o): o is NonNullable<typeof o> => o !== null)
-      : [];
-    const organizers = organizerDocs.map((doc, i) => ({
-      id: String(doc._id),
-      name: doc.name ?? "Organizer",
-      phone: doc.phone ?? "",
-      isCreator: i === 0,
-    }));
+    // Organizer identities (names + phones) — only revealed to the caller
+    // when they are themselves an organizer; never to random signed-in users
+    // (phone numbers are private identity handles on this platform).
+    let organizers: {
+      id: string;
+      name: string;
+      phone: string;
+      isCreator: boolean;
+    }[] = [];
+    if (isOrganizer && tournament) {
+      const organizerDocs = (
+        await Promise.all(
+          (tournament.organizers ?? []).map((id) => ctx.db.get(id)),
+        )
+      ).filter((o): o is NonNullable<typeof o> => o !== null);
+      organizers = organizerDocs.map((doc, i) => ({
+        id: String(doc._id),
+        name: doc.name ?? "Organizer",
+        phone: doc.phone ?? "",
+        isCreator: i === 0,
+      }));
+    }
 
     return {
       isOrganizer,

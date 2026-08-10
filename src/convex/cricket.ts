@@ -326,10 +326,15 @@ export function aggregateBowlerStats(
     }
     return e;
   };
-  // per-over run + legal-ball counts for maiden detection
+  // Per-over tracking for maiden detection. An over is a maiden when it had
+  // exactly 6 legal balls and conceded 0 runs. In this scoring flow one bowler
+  // bowls a full over (ball numbering restarts per over), so the maiden is
+  // credited to the bowler who bowled it — tracking per over number (instead
+  // of per bowler) avoids counting bogus maidens when a bowler's partial overs
+  // from different overs happen to sum to 6 balls.
   const overStats = new Map<
-    Id<"players">,
-    { balls: number; runs: number; overs: Set<number> }
+    number,
+    { balls: number; runs: number; bowlerId: Id<"players"> }
   >();
   for (const d of deliveries) {
     const e = ensure(d.bowlerId);
@@ -338,21 +343,18 @@ export function aggregateBowlerStats(
     e.runs += d.totalRuns;
     if (bowlerCredited(d)) e.wickets += 1;
 
-    const o = overStats.get(d.bowlerId) ?? {
-      balls: 0,
-      runs: 0,
-      overs: new Set<number>(),
-    };
-    o.overs.add(d.overNumber);
+    let o = overStats.get(d.overNumber);
+    if (!o) {
+      o = { balls: 0, runs: 0, bowlerId: d.bowlerId };
+      overStats.set(d.overNumber, o);
+    }
     if (legal) o.balls += 1;
     o.runs += d.totalRuns;
-    overStats.set(d.bowlerId, o);
   }
-  for (const [playerId, o] of overStats) {
-    // a maiden = a full 6-ball over with no runs conceded (wickets allowed)
-    if (o.overs.size > 0 && o.balls % 6 === 0 && o.runs === 0) {
-      const e = map.get(playerId);
-      if (e) e.maidens += o.overs.size;
+  for (const o of overStats.values()) {
+    if (o.balls === 6 && o.runs === 0) {
+      const e = map.get(o.bowlerId);
+      if (e) e.maidens += 1;
     }
   }
   return map;

@@ -518,7 +518,31 @@ export const undoLastDelivery = mutation({
       const prev = remaining[remaining.length - 1];
       await ctx.db.patch(target._id, { currentBowlerId: prev.bowlerId });
     }
-    if (match.status === "COMPLETED") {
+
+    // If an auto-created later innings (e.g. innings 2 created when innings 1
+    // finished) is now empty because we just undid the ball that completed the
+    // previous innings, remove it and point the match back at the fixed innings
+    // — otherwise the scorer would be prompted to set openers for innings 2
+    // while innings 1 still has balls left.
+    const allInnings = await ctx.db
+      .query("innings")
+      .withIndex("by_match", (q) => q.eq("matchId", match._id))
+      .collect();
+    const orphans = allInnings.filter(
+      (i) =>
+        i.number > target.number &&
+        i.ballsBowled === 0 &&
+        i.totalRuns === 0 &&
+        i.wickets === 0,
+    );
+    for (const o of orphans) await ctx.db.delete(o._id);
+    if (orphans.length > 0) {
+      await ctx.db.patch(match._id, {
+        status: "LIVE",
+        currentInningsId: target._id,
+        result: undefined,
+      });
+    } else if (match.status === "COMPLETED") {
       await ctx.db.patch(match._id, { status: "LIVE", result: undefined });
     }
     return { ok: true, reset: false };
