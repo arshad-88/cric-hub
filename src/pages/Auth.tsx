@@ -8,9 +8,11 @@ import {
   Loader2,
   LockKeyhole,
   Mail,
+  RefreshCw,
 } from "lucide-react";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { toast } from "sonner";
 
 interface AuthProps {
   redirectAfterAuth?: string;
@@ -41,7 +43,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [isLoading, setIsLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const verifiedRef = useRef(false);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -59,7 +63,12 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setError(null);
     try {
       await signIn("email-otp", { email: trimmed });
+      // CRITICAL: release the spinner before showing the code step — otherwise
+      // the verify button renders permanently stuck on "Verifying…" and the
+      // user can never enter the code they received.
+      setIsLoading(false);
       setStep("code");
+      toast.success("Code sent — check your inbox (and the spam folder).");
     } catch (err) {
       console.error("OTP send error:", err);
       setError(
@@ -71,8 +80,31 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
+  /** Re-send a fresh code to the same address without leaving the code step. */
+  const resendCode = async () => {
+    const trimmed = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(trimmed)) return;
+    setError(null);
+    setCode("");
+    setResending(true);
+    try {
+      await signIn("email-otp", { email: trimmed });
+      toast.success("Fresh code sent — check your inbox (and spam).");
+    } catch (err) {
+      console.error("OTP resend error:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not resend the code. Please try again.",
+      );
+    } finally {
+      setResending(false);
+    }
+  };
+
   const verify = async () => {
-    if (code.trim().length < 4) {
+    if (verifiedRef.current) return;
+    if (code.trim().length !== 6) {
       setError("Enter the 6-digit code we emailed you.");
       return;
     }
@@ -83,7 +115,10 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         email: email.trim().toLowerCase(),
         code: code.trim(),
       });
-      // useAuth's effect navigates to the redirect target once authenticated
+      verifiedRef.current = true;
+      // Release the spinner — useAuth's effect navigates to the redirect
+      // target as soon as the session lands (never leave the button stuck).
+      setIsLoading(false);
     } catch (err) {
       console.error("OTP verify error:", err);
       setError(
@@ -97,6 +132,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
   const resend = () => {
     setCode("");
+    setError(null);
     setStep("email");
   };
 
@@ -221,7 +257,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         placeholder="123456"
-                        maxLength={8}
+                        maxLength={6}
                         value={code}
                         onChange={(e) =>
                           setCode(e.target.value.replace(/\D/g, ""))
@@ -255,13 +291,31 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     )}
                   </Button>
 
-                  <button
-                    type="button"
-                    onClick={resend}
-                    className="flex w-full items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
-                  >
-                    <ArrowLeft className="size-3" /> Use a different email
-                  </button>
+                  <div className="flex flex-col gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={resendCode}
+                      disabled={resending || isLoading}
+                      className="flex w-full items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:text-[#22c55e] disabled:opacity-50"
+                    >
+                      {resending ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-3" />
+                      )}
+                      Didn't get it? Resend code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resend}
+                      className="flex w-full items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-[#22d3ee]"
+                    >
+                      <ArrowLeft className="size-3" /> Use a different email
+                    </button>
+                  </div>
+                  <p className="text-center text-[9px] uppercase tracking-widest text-slate-600">
+                    The code arrives by email — check spam if it doesn't show up.
+                  </p>
                 </form>
               </>
             )}

@@ -28,10 +28,20 @@ export const emailOtp = Email({
           headers: {
             "x-api-key": "fb_email_2crN1hqIArZP2bEfvjp5Qik4",
           },
+          // Never let a slow/unreachable mail service hang the sign-in step.
+          timeout: 10_000,
         },
       );
     } catch (error) {
-      throw new Error(JSON.stringify(error));
+      // Surface a readable message instead of a raw JSON dump of the Axios
+      // error object (that garbage would show up in the sign-in form).
+      const detail =
+        axios.isAxiosError(error) && error.response?.data
+          ? JSON.stringify(error.response.data)
+          : error instanceof Error
+            ? error.message
+            : "unknown error";
+      throw new Error(`Could not deliver the sign-in code: ${detail}`);
     }
   },
 });
