@@ -286,8 +286,9 @@ const schema = defineSchema(
       minWicketkeepers: v.optional(v.number()),
       minBowlers: v.optional(v.number()),
       minAllRounders: v.optional(v.number()),
-      // host hands-free mode: the server calls players, auto-raises for teams
-      // that enabled autoBid, sells when the clock runs out, and moves on.
+      // host mode switch: AUTO runs the whole auction from a server cron
+      // (calls players, sells when the clock runs out, moves on); MANUAL
+      // leaves it to the auctioneer.
       autoPilot: v.optional(v.boolean()),
       updatedAt: v.number(),
     })
@@ -301,10 +302,6 @@ const schema = defineSchema(
       name: v.string(),
       color: v.string(),
       purseRemaining: v.number(),
-      // team's automatic proxy bid — when ON, the room's auto-pilot raises on
-      // the team's behalf up to autoBidMax (lakhs), like an invisible auctioneer.
-      autoBid: v.optional(v.boolean()),
-      autoBidMax: v.optional(v.number()),
       sold: v.array(
         v.object({
           playerKey: v.string(),

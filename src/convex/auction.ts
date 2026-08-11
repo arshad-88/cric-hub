@@ -136,8 +136,6 @@ export const get = query({
         soldCount: t.sold.length,
         sold: t.sold,
         squad: roleCounts(t.sold),
-        autoBid: t.autoBid ?? false,
-        autoBidMax: t.autoBidMax ?? 0,
       })),
       currentBidderName: auction.currentBidderTeamId
         ? (teams.find((t) => t._id === auction.currentBidderTeamId)?.name ?? null)
@@ -499,50 +497,12 @@ export const finishPlayer = mutation({
   },
 });
 
-// ---- auto-bid + auto-pilot -------------------------------------------------
+// ---- auctioneer modes (manual / auto) --------------------------------------
 
-/** Team owner: turn proxy auto-bidding on/off with a max price (lakhs). */
-export const toggleAutoBid = mutation({
-  args: {
-    auctionId: v.id("auctions"),
-    maxBid: v.optional(v.number()),
-  },
-  handler: async (ctx, { auctionId, maxBid }) => {
-    const user = await requireUser(ctx);
-    const auction = await ctx.db.get(auctionId);
-    if (!auction) throw new Error("Room not found.");
-    if (auction.status === "COMPLETED") throw new Error("The auction has finished.");
-    const teams = await ctx.db
-      .query("auctionTeams")
-      .withIndex("by_auction", (q) => q.eq("auctionId", auctionId))
-      .collect();
-    const mine = teams.find((t) => t.ownerId === user._id);
-    if (!mine) throw new Error("Join the room with a team first.");
-
-    const turningOn = mine.autoBid !== true;
-    if (turningOn) {
-      const max = Math.floor(maxBid ?? 0);
-      if (max <= 0) throw new Error("Set a maximum bid first.");
-      if (max > mine.purseRemaining) {
-        throw new Error(
-          `Max bid cannot exceed your remaining purse (${mine.purseRemaining}L).`,
-        );
-      }
-      if (auction.currentBid != null && max <= auction.currentBid) {
-        throw new Error(
-          `Max bid must be above the current bid of ${auction.currentBid}L.`,
-        );
-      }
-      await ctx.db.patch(mine._id, { autoBid: true, autoBidMax: max });
-    } else {
-      await ctx.db.patch(mine._id, { autoBid: false, autoBidMax: undefined });
-    }
-    return auctionId;
-  },
-});
-
-/** Host: turn the room's auto-pilot on/off (bids, SOLD, next player all run
- *  themselves via a server-side cron — no auctioneer needed). */
+/** Host: switch the room between MANUAL (the auctioneer calls players, sells
+ *  and moves on by hand) and AUTO (a server-side cron calls every player,
+ *  sells to the highest bidder when the clock runs out and moves on — the
+ *  teams still do the bidding). */
 export const setAutoPilot = mutation({
   args: { auctionId: v.id("auctions"), on: v.boolean() },
   handler: async (ctx, { auctionId, on }) => {
@@ -555,13 +515,6 @@ export const setAutoPilot = mutation({
     return auctionId;
   },
 });
-
-/** Standard auction bid increments, in lakhs. */
-function bidIncrement(current: number): number {
-  if (current < 5) return 1;
-  if (current < 20) return 5;
-  return 10;
-}
 
 /** One auto-pilot tick for a single room (called by the cron). */
 export const tickAutoPilot = internalMutation({
@@ -604,37 +557,8 @@ export const tickAutoPilot = internalMutation({
       return;
     }
 
-    // Auto-bid: teams with autoBid ON raise like an invisible auctioneer.
-    const teams = await ctx.db
-      .query("auctionTeams")
-      .withIndex("by_auction", (q) => q.eq("auctionId", auctionId))
-      .collect();
-    const currentBid =
-      auction.currentBid ?? auction.pool[auction.currentIndex]?.basePrice ?? 0;
-    const candidates = teams
-      .filter((t) => t.autoBid === true && t.autoBidMax != null)
-      .filter((t) => t._id !== auction.currentBidderTeamId)
-      .filter((t) => {
-        const amount = Math.min(currentBid + bidIncrement(currentBid), t.autoBidMax!);
-        return amount > currentBid && t.autoBidMax! > currentBid && amount <= t.purseRemaining;
-      });
-    if (candidates.length === 0) return;
-    candidates.sort(
-      (a, b) =>
-        (b.autoBidMax ?? 0) - (a.autoBidMax ?? 0) ||
-        b.purseRemaining - a.purseRemaining,
-    );
-    const bidder = candidates[0];
-    const amount = Math.min(
-      currentBid + bidIncrement(currentBid),
-      bidder.autoBidMax!,
-    );
-    await ctx.db.patch(auctionId, {
-      currentBid: amount,
-      currentBidderTeamId: bidder._id,
-      bidEndsAt: now + BID_EXTEND_MS,
-      updatedAt: now,
-    });
+    // Time is still on the clock — in AUTO mode the teams bid themselves and
+    // each raise extends the window; the cron only intervenes at the deadline.
   },
 });
 
