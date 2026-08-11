@@ -8,7 +8,14 @@
 // reactively — exactly like the live scoring layer.
 // ---------------------------------------------------------------------------
 
-import { mutation, query, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  MutationCtx,
+  query,
+  QueryCtx,
+} from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -129,6 +136,8 @@ export const get = query({
         soldCount: t.sold.length,
         sold: t.sold,
         squad: roleCounts(t.sold),
+        autoBid: t.autoBid ?? false,
+        autoBidMax: t.autoBidMax ?? 0,
       })),
       currentBidderName: auction.currentBidderTeamId
         ? (teams.find((t) => t._id === auction.currentBidderTeamId)?.name ?? null)
@@ -341,6 +350,26 @@ export const join = mutation({
 
 // ---- live auction ----------------------------------------------------------
 
+async function startPlayerCore(
+  ctx: MutationCtx,
+  auctionId: Id<"auctions">,
+  index: number,
+): Promise<void> {
+  const auction = await ctx.db.get(auctionId);
+  if (!auction) throw new Error("Room not found.");
+  if (index < 0 || index >= auction.pool.length) throw new Error("Player index out of range.");
+  if (auction.currentIndex != null) throw new Error("A player is already on the block.");
+  const player = auction.pool[index];
+  await ctx.db.patch(auctionId, {
+    status: "LIVE",
+    currentIndex: index,
+    currentBid: player.basePrice,
+    currentBidderTeamId: undefined,
+    bidEndsAt: Date.now() + BID_WINDOW_MS,
+    updatedAt: Date.now(),
+  });
+}
+
 /** Auctioneer only: call the next player to the block. */
 export const startPlayer = mutation({
   args: { auctionId: v.id("auctions"), index: v.number() },
@@ -349,17 +378,7 @@ export const startPlayer = mutation({
     const auction = await ctx.db.get(auctionId);
     if (!auction) throw new Error("Room not found.");
     if (auction.hostId !== user._id) throw new Error("Only the auctioneer can call players.");
-    if (index < 0 || index >= auction.pool.length) throw new Error("Player index out of range.");
-    if (auction.currentIndex != null) throw new Error("A player is already on the block.");
-    const player = auction.pool[index];
-    await ctx.db.patch(auctionId, {
-      status: "LIVE",
-      currentIndex: index,
-      currentBid: player.basePrice,
-      currentBidderTeamId: undefined,
-      bidEndsAt: Date.now() + BID_WINDOW_MS,
-      updatedAt: Date.now(),
-    });
+    await startPlayerCore(ctx, auctionId, index);
     return auctionId;
   },
 });
@@ -396,6 +415,78 @@ export const placeBid = mutation({
   },
 });
 
+/** Shared core: sell to the highest bidder or send unsold (no auth). Throws
+ *  on constraint violations so the public mutation can surface them, while the
+ *  auto-pilot tick catches and falls back to UNSOLD instead of wedging. */
+async function finishPlayerCore(
+  ctx: MutationCtx,
+  auctionId: Id<"auctions">,
+  sold: boolean,
+): Promise<{ completed: boolean; sold: boolean }> {
+  const auction = await ctx.db.get(auctionId);
+  if (!auction) throw new Error("Room not found.");
+  if (auction.currentIndex == null || auction.currentBid == null) {
+    throw new Error("No player is on the block.");
+  }
+  const player = auction.pool[auction.currentIndex];
+  const bidderTeamId = auction.currentBidderTeamId;
+
+  if (sold && bidderTeamId) {
+    const bidder = await ctx.db.get(bidderTeamId);
+    if (bidder) {
+      // ---- squad constraint validation ---------------------------------
+      if (bidder.sold.length >= auction.squadSize) {
+        throw new Error(
+          `Squad full — ${bidder.name} already have ${auction.squadSize} players.`,
+        );
+      }
+      if (auction.currentBid > bidder.purseRemaining) {
+        throw new Error("That bid exceeds the team's remaining purse.");
+      }
+      const maxOverseas = auction.maxOverseas ?? 8;
+      if (
+        player.nationality === "OS" &&
+        bidder.sold.filter((s) => s.nationality === "OS").length >= maxOverseas
+      ) {
+        throw new Error(
+          `Overseas limit reached — ${bidder.name} already have ${maxOverseas} overseas players.`,
+        );
+      }
+      await ctx.db.patch(bidderTeamId, {
+        purseRemaining: bidder.purseRemaining - auction.currentBid,
+        sold: [
+          ...bidder.sold,
+          {
+            playerKey: player.key,
+            name: player.name,
+            role: player.role,
+            price: auction.currentBid,
+            photoUrl: player.photoUrl,
+            wiki: player.wiki,
+            teamShort: player.teamShort,
+            career: player.career,
+            form: player.form,
+            nationality: player.nationality,
+          },
+        ],
+      });
+    }
+  }
+
+  const soldCount = auction.soldCount + 1;
+  const completed = soldCount >= auction.pool.length;
+  await ctx.db.patch(auctionId, {
+    soldCount,
+    currentIndex: undefined,
+    currentBid: undefined,
+    currentBidderTeamId: undefined,
+    bidEndsAt: undefined,
+    status: completed ? "COMPLETED" : "LIVE",
+    updatedAt: Date.now(),
+  });
+  return { completed, sold: sold && bidderTeamId != null };
+}
+
 /** Auctioneer only: sell to the highest bidder, or send unsold. */
 export const finishPlayer = mutation({
   args: { auctionId: v.id("auctions"), sold: v.boolean() },
@@ -404,65 +495,158 @@ export const finishPlayer = mutation({
     const auction = await ctx.db.get(auctionId);
     if (!auction) throw new Error("Room not found.");
     if (auction.hostId !== user._id) throw new Error("Only the auctioneer can finish a player.");
-    if (auction.currentIndex == null || auction.currentBid == null) {
-      throw new Error("No player is on the block.");
-    }
-    const player = auction.pool[auction.currentIndex];
-    const bidderTeamId = auction.currentBidderTeamId;
+    return finishPlayerCore(ctx, auctionId, sold);
+  },
+});
 
-    if (sold && bidderTeamId) {
-      const bidder = await ctx.db.get(bidderTeamId);
-      if (bidder) {
-        // ---- squad constraint validation ---------------------------------
-        if (bidder.sold.length >= auction.squadSize) {
-          throw new Error(
-            `Squad full — ${bidder.name} already have ${auction.squadSize} players.`,
-          );
-        }
-        if (auction.currentBid > bidder.purseRemaining) {
-          throw new Error("That bid exceeds the team's remaining purse.");
-        }
-        const maxOverseas = auction.maxOverseas ?? 8;
-        if (
-          player.nationality === "OS" &&
-          bidder.sold.filter((s) => s.nationality === "OS").length >= maxOverseas
-        ) {
-          throw new Error(
-            `Overseas limit reached — ${bidder.name} already have ${maxOverseas} overseas players.`,
-          );
-        }
-        await ctx.db.patch(bidderTeamId, {
-          purseRemaining: bidder.purseRemaining - auction.currentBid,
-          sold: [
-            ...bidder.sold,
-            {
-              playerKey: player.key,
-              name: player.name,
-              role: player.role,
-              price: auction.currentBid,
-              photoUrl: player.photoUrl,
-              wiki: player.wiki,
-              teamShort: player.teamShort,
-              career: player.career,
-              form: player.form,
-              nationality: player.nationality,
-            },
-          ],
-        });
+// ---- auto-bid + auto-pilot -------------------------------------------------
+
+/** Team owner: turn proxy auto-bidding on/off with a max price (lakhs). */
+export const toggleAutoBid = mutation({
+  args: {
+    auctionId: v.id("auctions"),
+    maxBid: v.optional(v.number()),
+  },
+  handler: async (ctx, { auctionId, maxBid }) => {
+    const user = await requireUser(ctx);
+    const auction = await ctx.db.get(auctionId);
+    if (!auction) throw new Error("Room not found.");
+    if (auction.status === "COMPLETED") throw new Error("The auction has finished.");
+    const teams = await ctx.db
+      .query("auctionTeams")
+      .withIndex("by_auction", (q) => q.eq("auctionId", auctionId))
+      .collect();
+    const mine = teams.find((t) => t.ownerId === user._id);
+    if (!mine) throw new Error("Join the room with a team first.");
+
+    const turningOn = mine.autoBid !== true;
+    if (turningOn) {
+      const max = Math.floor(maxBid ?? 0);
+      if (max <= 0) throw new Error("Set a maximum bid first.");
+      if (max > mine.purseRemaining) {
+        throw new Error(
+          `Max bid cannot exceed your remaining purse (${mine.purseRemaining}L).`,
+        );
       }
+      if (auction.currentBid != null && max <= auction.currentBid) {
+        throw new Error(
+          `Max bid must be above the current bid of ${auction.currentBid}L.`,
+        );
+      }
+      await ctx.db.patch(mine._id, { autoBid: true, autoBidMax: max });
+    } else {
+      await ctx.db.patch(mine._id, { autoBid: false, autoBidMax: undefined });
+    }
+    return auctionId;
+  },
+});
+
+/** Host: turn the room's auto-pilot on/off (bids, SOLD, next player all run
+ *  themselves via a server-side cron — no auctioneer needed). */
+export const setAutoPilot = mutation({
+  args: { auctionId: v.id("auctions"), on: v.boolean() },
+  handler: async (ctx, { auctionId, on }) => {
+    const user = await requireUser(ctx);
+    const auction = await ctx.db.get(auctionId);
+    if (!auction) throw new Error("Room not found.");
+    if (auction.hostId !== user._id) throw new Error("Only the auctioneer can control auto-pilot.");
+    if (auction.status === "COMPLETED") throw new Error("The auction has finished.");
+    await ctx.db.patch(auctionId, { autoPilot: on, updatedAt: Date.now() });
+    return auctionId;
+  },
+});
+
+/** Standard auction bid increments, in lakhs. */
+function bidIncrement(current: number): number {
+  if (current < 5) return 1;
+  if (current < 20) return 5;
+  return 10;
+}
+
+/** One auto-pilot tick for a single room (called by the cron). */
+export const tickAutoPilot = internalMutation({
+  args: { auctionId: v.id("auctions") },
+  handler: async (ctx, { auctionId }) => {
+    const auction = await ctx.db.get(auctionId);
+    if (!auction || auction.autoPilot !== true || auction.status === "COMPLETED") return;
+
+    // Nothing on the block → call the next player (or finish the room).
+    if (auction.currentIndex == null) {
+      if (auction.soldCount >= auction.pool.length) {
+        await ctx.db.patch(auctionId, { status: "COMPLETED", updatedAt: Date.now() });
+        return;
+      }
+      await startPlayerCore(ctx, auctionId, auction.soldCount);
+      return;
     }
 
-    const soldCount = auction.soldCount + 1;
-    const completed = soldCount >= auction.pool.length;
+    const now = Date.now();
+    const timeLeft = (auction.bidEndsAt ?? 0) - now;
+
+    // Clock ran out → sell to the current highest bidder (or UNSOLD), then
+    // immediately call the next player so the room never stalls.
+    if (timeLeft <= 0) {
+      try {
+        await finishPlayerCore(ctx, auctionId, !!auction.currentBidderTeamId);
+      } catch {
+        // Constraint failure (squad full / purse) — send the player unsold.
+        await finishPlayerCore(ctx, auctionId, false).catch(() => {});
+      }
+      const after = await ctx.db.get(auctionId);
+      if (
+        after &&
+        after.status === "LIVE" &&
+        after.currentIndex == null &&
+        after.soldCount < after.pool.length
+      ) {
+        await startPlayerCore(ctx, auctionId, after.soldCount);
+      }
+      return;
+    }
+
+    // Auto-bid: teams with autoBid ON raise like an invisible auctioneer.
+    const teams = await ctx.db
+      .query("auctionTeams")
+      .withIndex("by_auction", (q) => q.eq("auctionId", auctionId))
+      .collect();
+    const currentBid =
+      auction.currentBid ?? auction.pool[auction.currentIndex]?.basePrice ?? 0;
+    const candidates = teams
+      .filter((t) => t.autoBid === true && t.autoBidMax != null)
+      .filter((t) => t._id !== auction.currentBidderTeamId)
+      .filter((t) => {
+        const amount = Math.min(currentBid + bidIncrement(currentBid), t.autoBidMax!);
+        return amount > currentBid && t.autoBidMax! > currentBid && amount <= t.purseRemaining;
+      });
+    if (candidates.length === 0) return;
+    candidates.sort(
+      (a, b) =>
+        (b.autoBidMax ?? 0) - (a.autoBidMax ?? 0) ||
+        b.purseRemaining - a.purseRemaining,
+    );
+    const bidder = candidates[0];
+    const amount = Math.min(
+      currentBid + bidIncrement(currentBid),
+      bidder.autoBidMax!,
+    );
     await ctx.db.patch(auctionId, {
-      soldCount,
-      currentIndex: undefined,
-      currentBid: undefined,
-      currentBidderTeamId: undefined,
-      bidEndsAt: undefined,
-      status: completed ? "COMPLETED" : "LIVE",
-      updatedAt: Date.now(),
+      currentBid: amount,
+      currentBidderTeamId: bidder._id,
+      bidEndsAt: now + BID_EXTEND_MS,
+      updatedAt: now,
     });
-    return { completed, sold: sold && bidderTeamId != null };
+  },
+});
+
+/** Cron entry: tick every auto-pilot room in one pass. */
+export const tickAllAutoPilot = internalMutation({
+  handler: async (ctx) => {
+    const auctions = await ctx.db.query("auctions").collect();
+    for (const a of auctions) {
+      if (a.autoPilot !== true || a.status === "COMPLETED") continue;
+      await ctx.runMutation(internal.auction.tickAutoPilot, {
+        auctionId: a._id,
+      });
+    }
   },
 });

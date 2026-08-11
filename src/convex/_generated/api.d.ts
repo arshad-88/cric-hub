@@ -24,6 +24,7 @@ import type * as mvp from "../mvp.js";
 import type * as notifications from "../notifications.js";
 import type * as notificationsPush from "../notificationsPush.js";
 import type * as players from "../players.js";
+import type * as scheduler from "../scheduler.js";
 import type * as scorecard from "../scorecard.js";
 import type * as scoring from "../scoring.js";
 import type * as seed from "../seed.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   notificationsPush: typeof notificationsPush;
   players: typeof players;
+  scheduler: typeof scheduler;
   scorecard: typeof scorecard;
   scoring: typeof scoring;
   seed: typeof seed;

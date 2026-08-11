@@ -220,7 +220,7 @@ export function WagonWheel({
                 stroke="#0f172a"
                 strokeWidth={1.5}
               >
-                <title>{`${s.overLabel} — ${s.runs} run${s.runs > 1 ? "s" : ""} · ${s.region}`}</title>
+                <title>{`${s.overLabel} — ${s.runs} run${s.runs > 1 ? "s" : ""} · ${s.region}${s.shotType ? ` · ${s.shotType}` : ""}`}</title>
               </circle>
               {s.runs >= 4 && (
                 <text

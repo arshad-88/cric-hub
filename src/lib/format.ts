@@ -83,7 +83,7 @@ export interface InningsView {
     current: { runs: number; balls: number; batters: string[] } | null;
     highest: { runs: number; balls: number; batters: string[] } | null;
   };
-  wagonWheel: { overLabel: string; runs: number; region: string }[];
+  wagonWheel: { overLabel: string; runs: number; region: string; shotType?: string }[];
   needed: number | null;
   ballsLeft: number | null;
   isCurrent: boolean;

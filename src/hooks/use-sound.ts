@@ -1,8 +1,15 @@
 // ---------------------------------------------------------------------------
-// use-sound.ts — synthesized match/auction sound effects (Web Audio, no audio
-// files needed). A single engine instance plays one sound at a time so rapid
-// events (a six off a no-ball) never overlap: each new sound cuts the last.
-// Mute state persists in localStorage and is toggled from the header.
+// use-sound.ts — match/auction sound effects, synthesized in-browser with Web
+// Audio (no audio files, so it always loads and never blocks). The effects are
+// built from layered noise + tone beds to sound like a real broadcast:
+//
+//   • six / four / fifty / century / hat-trick / five-wicket / victory → big
+//     audience cheers (roar + claps + whistles + air horns)
+//   • noball → the classic two-tone no-ball siren with a crowd murmur
+//   • wicket → the crack of the stumps + a collective groan
+//
+// A single engine instance plays one effect at a time so rapid events never
+// overlap: each new sound cuts the last. Mute state persists in localStorage.
 // ---------------------------------------------------------------------------
 
 import { api } from "@/convex/_generated/api";
@@ -17,6 +24,7 @@ export type SoundKind =
   | "fifty"
   | "century"
   | "milestone"
+  | "fiveWicket"
   | "hatTrickBall"
   | "hatTrick"
   | "victory"
@@ -26,24 +34,11 @@ export type SoundKind =
   | "wide"
   | "noball";
 
-const TONES: Record<SoundKind, number[]> = {
-  four: [523.25, 659.25, 783.99],
-  six: [392, 523.25, 659.25, 783.99, 1046.5],
-  wicket: [311, 233, 155.56],
-  fifty: [523.25, 659.25, 783.99, 1046.5],
-  century: [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.5],
-  milestone: [523.25, 659.25, 783.99],
-  hatTrickBall: [440, 493.88, 523.25],
-  hatTrick: [392, 493.88, 587.33, 783.99, 987.77],
-  victory: [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5],
-  sold: [880, 1318.5],
-  unsold: [329.63, 220],
-  appeal: [698.46, 698.46],
-  wide: [587.33],
-  noball: [493.88],
-};
+// ---- shared audio plumbing -------------------------------------------------
 
 let audioCtx: AudioContext | null = null;
+let master: GainNode | null = null;
+let noiseBuf: AudioBuffer | null = null;
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -54,7 +49,24 @@ function audio(): AudioContext | null {
         (window as unknown as { webkitAudioContext?: typeof AudioContext })
           .webkitAudioContext;
       if (!AC) return null;
-      audioCtx = new AC();
+      const ctx = new AC();
+      // Master bus: one compressor keeps every effect loud but clean.
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -14;
+      comp.knee.value = 20;
+      comp.ratio.value = 8;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.22;
+      comp.connect(ctx.destination);
+      master = ctx.createGain();
+      master.gain.value = 0.9;
+      master.connect(comp);
+      // Shared white-noise buffer for crowd/clap beds.
+      const len = Math.floor(ctx.sampleRate * 2);
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      audioCtx = ctx;
     }
     if (audioCtx.state === "suspended") void audioCtx.resume();
     return audioCtx;
@@ -65,11 +77,7 @@ function audio(): AudioContext | null {
 
 const active: AudioScheduledSourceNode[] = [];
 
-/** Play one synthesized effect. A new call cuts any sound still playing. */
-export function playSound(kind: SoundKind, enabled = true): void {
-  if (!enabled) return;
-  const a = audio();
-  if (!a) return;
+function cutPrevious(): void {
   for (const n of active) {
     try {
       n.stop();
@@ -78,23 +86,284 @@ export function playSound(kind: SoundKind, enabled = true): void {
     }
   }
   active.length = 0;
-  const freqs = TONES[kind] ?? TONES.milestone;
+}
+
+function track(node: AudioScheduledSourceNode): void {
+  active.push(node);
+  node.onended = () => {
+    const i = active.indexOf(node);
+    if (i >= 0) active.splice(i, 1);
+  };
+}
+
+function gainEnv(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  peak: number,
+  dur: number,
+  attack = 0.02,
+): GainNode {
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  g.connect(dest);
+  return g;
+}
+
+/** One-shot bandpass noise burst (claps, thuds, roars). */
+function noiseHit(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  dur: number,
+  peak: number,
+  freq: number,
+  q = 1.2,
+): void {
+  if (!noiseBuf) return;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = freq;
+  bp.Q.value = q;
+  const g = gainEnv(ctx, dest, t0, peak, dur);
+  src.connect(bp);
+  bp.connect(g);
+  src.start(t0);
+  src.stop(t0 + dur + 0.05);
+  track(src);
+}
+
+/** Continuous noise bed with a swell envelope (crowd roar / murmur). */
+function noiseBed(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  dur: number,
+  peak: number,
+  freq: number,
+  type: BiquadFilterType = "lowpass",
+): void {
+  if (!noiseBuf) return;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  const g = gainEnv(ctx, dest, t0, peak, dur, 0.12);
+  src.connect(f);
+  f.connect(g);
+  src.start(t0);
+  src.stop(t0 + dur + 0.1);
+  track(src);
+}
+
+/** A single pitched tone with envelope (horns, sirens, whistles). */
+function tone(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  freq: number,
+  dur: number,
+  peak: number,
+  type: OscillatorType = "sawtooth",
+  glideTo?: number,
+): void {
+  const osc = ctx.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (glideTo !== undefined) {
+    osc.frequency.exponentialRampToValueAtTime(
+      Math.max(20, glideTo),
+      t0 + dur,
+    );
+  }
+  const g = gainEnv(ctx, dest, t0, peak, dur);
+  osc.connect(g);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+  track(osc);
+}
+
+/** Formant-style "woo" / "ooh" swell (bandpassed saw through a falling glide). */
+function wooSwell(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  dur: number,
+  peak: number,
+  fromFreq = 900,
+  toFreq = 450,
+): void {
+  const osc = ctx.createOscillator();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(fromFreq, t0);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(40, toFreq), t0 + dur);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 700;
+  bp.Q.value = 3.5;
+  const g = gainEnv(ctx, dest, t0, peak, dur, 0.15);
+  osc.connect(bp);
+  bp.connect(g);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+  track(osc);
+}
+
+/** Random applause: many short bandpass ticks over a window. */
+function claps(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  dur: number,
+  count: number,
+  peak: number,
+): void {
+  for (let i = 0; i < count; i++) {
+    const t = t0 + Math.random() * dur;
+    noiseHit(ctx, dest, t, 0.035, peak * (0.5 + Math.random() * 0.7), 1400 + Math.random() * 1800, 2.2);
+  }
+}
+
+/** Sharp whistle mixed into big cheers. */
+function whistles(
+  ctx: AudioContext,
+  dest: AudioNode,
+  t0: number,
+  dur: number,
+  peak: number,
+): void {
+  const n = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < n; i++) {
+    const t = t0 + Math.random() * dur;
+    const f = 2400 + Math.random() * 1600;
+    tone(ctx, dest, t, f, 0.22, peak, "sine", f * 1.25);
+  }
+}
+
+/** Big broadcast-style audience cheer. */
+function cheer(
+  ctx: AudioContext,
+  dur: number,
+  peak: number,
+  opts: { horn?: boolean; huge?: boolean } = {},
+): void {
+  if (!master) return;
+  const t0 = ctx.currentTime;
+  // 1) the roar: low crowd bed that swells in
+  noiseBed(ctx, master, t0, dur, peak * 0.85, opts.huge ? 1100 : 900);
+  // 2) rising "ooooh" before the explosion (for huge moments)
+  if (opts.huge) wooSwell(ctx, master, t0, dur * 0.35, peak * 0.5, 850, 420);
+  // 3) applause wall
+  claps(ctx, master, t0, dur, opts.huge ? 90 : 46, peak * 0.55);
+  // 4) whistles
+  whistles(ctx, master, t0, dur, peak * 0.35);
+  // 5) air horns on the big moments
+  if (opts.horn) {
+    tone(ctx, master, t0 + dur * 0.08, 520, 0.5, peak * 0.55, "sawtooth", 400);
+    tone(ctx, master, t0 + dur * 0.08, 660, 0.5, peak * 0.45, "sawtooth", 520);
+  }
+  if (opts.huge) {
+    tone(ctx, master, t0 + dur * 0.45, 520, 0.6, peak * 0.5, "sawtooth", 400);
+  }
+}
+
+/** Crowd "aww" / groan after a wicket or unsold. */
+function groan(ctx: AudioContext, dur: number, peak: number): void {
+  if (!master) return;
+  const t0 = ctx.currentTime;
+  noiseBed(ctx, master, t0, dur, peak * 0.5, 500);
+  wooSwell(ctx, master, t0, dur, peak * 0.4, 420, 160);
+  claps(ctx, master, t0, dur * 0.5, 8, peak * 0.12);
+}
+
+/** IPL-style two-tone no-ball siren with a murmur bed. */
+function siren(ctx: AudioContext, dur: number, peak: number): void {
+  if (!master) return;
+  const t0 = ctx.currentTime;
+  noiseBed(ctx, master, t0, dur, peak * 0.3, 700, "bandpass");
+  const cycles = Math.max(2, Math.floor(dur / 0.42));
+  for (let i = 0; i < cycles; i++) {
+    const t = t0 + i * 0.42;
+    const hi = i % 2 === 0;
+    tone(ctx, master, t, hi ? 880 : 659, 0.38, peak * (hi ? 0.85 : 0.7), "square");
+  }
+}
+
+/** Play one synthesized effect. A new call cuts any sound still playing. */
+export function playSound(kind: SoundKind, enabled = true): void {
+  if (!enabled) return;
+  const a = audio();
+  if (!a || !master) return;
+  cutPrevious();
   const now = a.currentTime;
-  freqs.forEach((f, i) => {
-    const osc = a.createOscillator();
-    const gain = a.createGain();
-    osc.type = i < 2 ? "triangle" : "sine";
-    osc.frequency.value = f;
-    const t0 = now + i * 0.09;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
-    osc.connect(gain);
-    gain.connect(a.destination);
-    osc.start(t0);
-    osc.stop(t0 + 0.42);
-    active.push(osc);
-  });
+  switch (kind) {
+    case "six":
+      cheer(a, 2.2, 0.95, { huge: true, horn: true });
+      break;
+    case "four":
+      cheer(a, 1.5, 0.85, {});
+      break;
+    case "wicket":
+      // crack of the stumps, then the groan
+      noiseHit(a, master, now, 0.09, 0.9, 260, 1.5);
+      noiseHit(a, master, now + 0.03, 0.16, 0.7, 1200, 0.8);
+      groan(a, 1.6, 0.7);
+      break;
+    case "fifty":
+      cheer(a, 2.4, 0.95, { huge: true, horn: true });
+      break;
+    case "century":
+      cheer(a, 3.2, 1.0, { huge: true, horn: true });
+      tone(a, master, now + 0.1, 784, 0.5, 0.5, "triangle");
+      tone(a, master, now + 0.22, 988, 0.5, 0.5, "triangle");
+      break;
+    case "fiveWicket":
+      cheer(a, 3.4, 1.0, { huge: true, horn: true });
+      break;
+    case "hatTrick":
+      cheer(a, 3.4, 1.0, { huge: true, horn: true });
+      for (let i = 0; i < 3; i++) {
+        tone(a, master, now + 0.15 + i * 0.18, 440, 0.4, 0.5, "square");
+      }
+      break;
+    case "hatTrickBall":
+      // tense rising "oooooh" — everyone holding their breath
+      wooSwell(a, master, now, 1.6, 0.75, 500, 1200);
+      noiseBed(a, master, now, 1.6, 0.25, 800, "bandpass");
+      break;
+    case "victory":
+      cheer(a, 3.6, 1.0, { huge: true, horn: true });
+      break;
+    case "milestone":
+      cheer(a, 1.8, 0.85, { horn: true });
+      break;
+    case "noball":
+      siren(a, 2.0, 0.95);
+      noiseBed(a, master, now + 0.15, 1.4, 0.2, 900, "bandpass");
+      break;
+    case "wide":
+      siren(a, 0.8, 0.5);
+      break;
+    case "sold":
+      cheer(a, 1.6, 0.9, {});
+      tone(a, master, now + 0.1, 1046, 0.45, 0.4, "triangle");
+      tone(a, master, now + 0.22, 1318, 0.5, 0.4, "triangle");
+      break;
+    case "unsold":
+      groan(a, 1.5, 0.65);
+      break;
+    case "appeal":
+      wooSwell(a, master, now, 1.3, 0.7, 600, 1400);
+      noiseBed(a, master, now, 1.3, 0.3, 1000, "bandpass");
+      break;
+  }
 }
 
 const STORAGE_KEY = "crikhub.sound.enabled";
@@ -130,6 +399,7 @@ export function soundForEventTitle(title: string): SoundKind | null {
   if (t.includes("WICKET")) return "wicket";
   if (t.includes("CENTURY")) return "century";
   if (t.includes("FIFTY")) return "fifty";
+  if (t.includes("5-WICKET HAUL")) return "fiveWicket";
   if (t.includes("FULL TIME") || t.includes("RESULT")) return "victory";
   if (t.includes("TIED") || t.includes("SUPER OVER")) return "hatTrickBall";
   if (

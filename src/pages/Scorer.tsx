@@ -48,6 +48,38 @@ interface PlayerDoc {
 
 const WICKET_TYPES: WicketType[] = ["Bowled", "Caught", "Run out", "Stumped", "LBW"];
 
+/** Shot options asked after every scoring ball (feeds the wagon wheel). */
+const SHOT_TYPES = [
+  "Drive",
+  "Cut",
+  "Pull",
+  "Hook",
+  "Sweep",
+  "Reverse sweep",
+  "Flick",
+  "Lofted",
+  "Slog",
+  "Steer",
+  "Defensive",
+] as const;
+
+/** Regions must match REGION_ANGLE keys in MatchCharts.tsx (wagon wheel). */
+const SHOT_REGIONS = [
+  "straight",
+  "cover",
+  "extra-cover",
+  "point",
+  "third-man",
+  "mid-off",
+  "long-off",
+  "mid-on",
+  "long-on",
+  "midwicket",
+  "deep-midwicket",
+  "square-leg",
+  "fine-leg",
+] as const;
+
 export default function Scorer() {
   const { matchId } = useParams<{ matchId: string }>();
   const scorecard = useQuery(api.scorecard.get, matchId ? { matchId: matchId as Id<"matches"> } : "skip");
@@ -83,6 +115,7 @@ export default function Scorer() {
   const [bowlerOpen, setBowlerOpen] = useState(false);
   const [streamOpen, setStreamOpen] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
+  const [shotPending, setShotPending] = useState<number | null>(null);
 
   if (scorecard === undefined) {
     return <ScorerShell><div className="h-10 w-10 animate-spin border-2 border-[#22c55e] border-t-transparent" /></ScorerShell>;
@@ -149,7 +182,9 @@ export default function Scorer() {
   const nonStrikerCard = current?.batters.find((b) => b.isNonStriker);
   const bowlerCard = current?.bowlers.find((b) => b.playerId === bowler?._id);
 
-  const tap = async (runs: number) => {
+  /** Record a scoring ball — for runs > 0 we first ask which shot + where it
+   *  went (that placement feeds the wagon wheel), then record with the tags. */
+  const recordShot = async (runs: number, shotType?: string, shotRegion?: string) => {
     if (!current || !striker || !bowler) {
       toast.error("Set the openers and the bowler first.");
       return;
@@ -166,12 +201,27 @@ export default function Scorer() {
         extraType: "none",
         extraRuns: 0,
         isWicket: false,
+        shotRegion: shotRegion,
+        shotType: shotType,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not record the ball.");
     } finally {
       setBusy(false);
     }
+  };
+
+  const tap = (runs: number) => {
+    if (!current || !striker || !bowler) {
+      toast.error("Set the openers and the bowler first.");
+      return;
+    }
+    if (runs > 0) {
+      // ask which shot + which area of the ground (wagon wheel data)
+      setShotPending(runs);
+      return;
+    }
+    void recordShot(0);
   };
 
   const handleUndo = async () => {
@@ -528,6 +578,22 @@ export default function Scorer() {
             } finally {
               setBusy(false);
             }
+          }}
+        />
+      )}
+
+      {shotPending !== null && current && (
+        <ShotDialog
+          runs={shotPending}
+          strikerName={striker?.name ?? ""}
+          onCancel={() => setShotPending(null)}
+          onConfirm={async (shotType, shotRegion) => {
+            await recordShot(shotPending, shotType, shotRegion);
+            setShotPending(null);
+          }}
+          onSkip={async () => {
+            await recordShot(shotPending);
+            setShotPending(null);
           }}
         />
       )}
@@ -1061,6 +1127,119 @@ function ExtraDialog({
           </Button>
           <Button className="rounded-none bg-[#facc15] uppercase text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]" onClick={submit} disabled={busy}>
             Record
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ShotDialog({
+  runs,
+  strikerName,
+  onCancel,
+  onConfirm,
+  onSkip,
+}: {
+  runs: number;
+  strikerName: string;
+  onCancel: () => void;
+  onConfirm: (shotType: string, shotRegion: string) => Promise<void>;
+  onSkip: () => Promise<void>;
+}) {
+  const [shotType, setShotType] = useState<string>("");
+  const [shotRegion, setShotRegion] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!shotType || !shotRegion) {
+      toast.error("Pick the shot and the area it went to.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onConfirm(shotType, shotRegion);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !busy && onCancel()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-none border-border sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="uppercase text-[#22c55e]">
+            {runs} run{runs > 1 ? "s" : ""} — {strikerName}
+          </DialogTitle>
+          <DialogDescription>
+            Which shot was it, and where on the ground did it go? This powers the
+            wagon wheel.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+              Shot played
+            </Label>
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              {SHOT_TYPES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setShotType(s)}
+                  className={cn(
+                    "border px-1.5 py-2 text-[10px] font-extrabold uppercase tracking-wide transition-colors",
+                    shotType === s
+                      ? "border-[#22c55e] bg-[#22c55e]/15 text-[#22c55e]"
+                      : "border-border bg-[#0b1524] text-slate-300 hover:border-slate-600",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+              Area of the ground
+            </Label>
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+              {SHOT_REGIONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setShotRegion(r)}
+                  className={cn(
+                    "border px-1.5 py-2 text-[9px] font-bold uppercase tracking-wide transition-colors",
+                    shotRegion === r
+                      ? "border-[#22d3ee] bg-[#22d3ee]/15 text-[#22d3ee]"
+                      : "border-border bg-[#0b1524] text-slate-400 hover:border-slate-600",
+                  )}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-none border-border uppercase text-slate-300"
+            onClick={() => void onSkip()}
+            disabled={busy}
+          >
+            Skip tagging
+          </Button>
+          <Button
+            type="button"
+            className="rounded-none bg-[#22c55e] uppercase text-[#052e16] hover:bg-[#facc15] hover:text-[#422006]"
+            onClick={() => void submit()}
+            disabled={busy}
+          >
+            Record {runs} run{runs > 1 ? "s" : ""}
           </Button>
         </DialogFooter>
       </DialogContent>

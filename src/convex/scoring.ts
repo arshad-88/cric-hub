@@ -318,6 +318,7 @@ export const recordDelivery = mutation({
     fielderId: v.optional(v.id("players")),
     newBatsmanId: v.optional(v.id("players")),
     shotRegion: v.optional(v.string()), // scoring-shot placement for the wagon wheel
+    shotType: v.optional(v.string()), // which shot was played (drive, pull, sweep…)
   },
   handler: async (ctx, args) => {
     const match = await ctx.db.get(args.matchId);
@@ -477,6 +478,7 @@ export const recordDelivery = mutation({
       fielderId: args.fielderId,
       newBatsmanId: args.newBatsmanId,
       shotRegion: args.shotRegion,
+      shotType: args.shotType,
       commentary,
     });
 

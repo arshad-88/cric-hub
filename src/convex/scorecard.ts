@@ -290,6 +290,7 @@ export const get = query({
           overLabel: `${d.overNumber}.${d.ballNumber}`,
           runs: d.runsScored,
           region: d.shotRegion!,
+          shotType: d.shotType,
         }));
 
       // ---- extras breakdown ------------------------------------------------

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
+  Bot,
   Copy,
   Crown,
   Gavel,
@@ -243,6 +244,9 @@ export default function AuctionRoom() {
             {room.mode === "ipl" ? "Real IPL" : "Local auction"}
           </span>
           <RoomCode code={room.roomCode} />
+          {isHost && room.status !== "COMPLETED" && (
+            <AutoPilotToggle roomId={room._id} on={room.autoPilot === true} />
+          )}
           <span className="ml-auto flex items-center gap-2">
             <span
               className={cn(
@@ -284,6 +288,11 @@ export default function AuctionRoom() {
                 {t._id === room.currentBidderTeamId && (
                   <span className="animate-pulse text-[#facc15]">· bidding</span>
                 )}
+                {t.autoBid && (
+                  <span className="rounded bg-[#22d3ee]/15 px-1 text-[8px] font-black tracking-widest text-[#22d3ee]">
+                    AUTO
+                  </span>
+                )}
               </p>
               <p className="score-nums mt-1 text-[10px] font-bold text-slate-500">
                 {inr(t.purseRemaining)} left · {t.soldCount}/{t.squadSize} · OS {t.squad?.overseas ?? 0}/{t.maxOverseas ?? 8}
@@ -304,8 +313,8 @@ export default function AuctionRoom() {
           <SetupPanel room={room} isHost={isHost} />
         ) : null}
 
-        {/* pool */}
-        <PoolGrid room={room} />
+        {/* pool — auctioneer only; teams see the squads board instead */}
+        {isHost ? <PoolGrid room={room} /> : <TeamsSquadsBoard room={room} />}
 
         {/* results */}
         {room.status === "COMPLETED" && <Results room={room} />}
@@ -492,6 +501,8 @@ interface TeamView {
     bowlers: number;
     overseas: number;
   };
+  autoBid: boolean;
+  autoBidMax: number;
 }
 
 interface RoomView {
@@ -512,6 +523,7 @@ interface RoomView {
   currentBidderName: string | null;
   bidEndsAt?: number;
   soldCount: number;
+  autoPilot?: boolean;
   updatedAt: number;
   teams: TeamView[];
 }
@@ -803,6 +815,173 @@ function PoolGrid({ room }: { room: RoomView }) {
                   </p>
                 </>
               )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Host-only switch: the server runs the whole auction (call players, auto
+ *  bids, SOLD on timeout, next player) via a cron — no auctioneer needed. */
+function AutoPilotToggle({ roomId, on }: { roomId: Id<"auctions">; on: boolean }) {
+  const setAutoPilot = useMutation(api.auction.setAutoPilot);
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await setAutoPilot({ auctionId: roomId, on: !on });
+          toast.success(on ? "Auto-pilot off — back to the auctioneer." : "Auto-pilot on — the room runs itself.");
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Could not toggle auto-pilot.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest transition-colors",
+        on
+          ? "animate-pulse bg-[#22d3ee] text-[#083344]"
+          : "border border-[#22d3ee]/50 text-[#22d3ee] hover:bg-[#22d3ee]/10",
+      )}
+    >
+      <Bot className="size-3.5" />
+      {on ? "Auto-pilot ON" : "Auto-pilot"}
+    </button>
+  );
+}
+
+/** Everyone except the auctioneer sees this instead of the player pool: every
+ *  team's squad, purse and constraints — plus the owner's proxy auto-bid. */
+function TeamsSquadsBoard({ room }: { room: RoomView }) {
+  const { user } = useAuth();
+  const toggleAutoBid = useMutation(api.auction.toggleAutoBid);
+  const [maxBid, setMaxBid] = useState("");
+  const [busy, setBusy] = useState(false);
+  const myTeam = room.teams.find((t) => t.ownerId === user?._id) ?? null;
+
+  const doToggle = async () => {
+    if (!myTeam) return;
+    setBusy(true);
+    try {
+      await toggleAutoBid({
+        auctionId: room._id,
+        maxBid: myTeam.autoBid ? undefined : Number(maxBid),
+      });
+      toast.success(
+        myTeam.autoBid ? "Auto-bid off." : `Auto-bid armed up to ${inr(Number(maxBid))}.`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not toggle auto-bid.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-8">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <MicroLabel className="block text-slate-500">Teams &amp; squads — {room.teams.length} teams</MicroLabel>
+        {myTeam && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              placeholder="Max bid (L)"
+              value={maxBid}
+              onChange={(e) => setMaxBid(e.target.value)}
+              className="h-8 w-28 rounded-none border-border bg-[#0b1524] text-xs text-slate-200"
+            />
+            <button
+              type="button"
+              disabled={busy || (!myTeam.autoBid && !Number(maxBid))}
+              onClick={() => void doToggle()}
+              className={cn(
+                "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition-colors disabled:opacity-40",
+                myTeam.autoBid
+                  ? "border-[#ef4444] bg-[#ef4444]/15 text-[#ef4444]"
+                  : "border-[#22d3ee] bg-[#22d3ee]/15 text-[#22d3ee]",
+              )}
+            >
+              <Bot className="size-3.5" />
+              {myTeam.autoBid ? "Auto-bid ON" : "Auto-bid me"}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {room.teams.map((t) => {
+          const pct = Math.round((t.soldCount / Math.max(1, t.squadSize)) * 100);
+          return (
+            <div
+              key={String(t._id)}
+              className={cn(
+                "border border-border bg-card p-4 panel-glow",
+                myTeam?._id === t._id && "ring-1 ring-inset ring-[#22c55e]",
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 truncate text-sm font-extrabold uppercase tracking-tight text-slate-100">
+                    <span className="size-2.5 shrink-0" style={{ backgroundColor: t.color }} />
+                    {t.name}
+                  </p>
+                  <p className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                    {t.ownerName}
+                    {t.autoBid && (
+                      <span className="ml-1.5 rounded bg-[#22d3ee]/15 px-1 py-0.5 text-[8px] font-black text-[#22d3ee]">
+                        AUTO · up to {inr(t.autoBidMax)}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <p className="score-nums text-right text-[10px] font-black text-[#22c55e]">
+                  {inr(t.purseRemaining)}
+                  <span className="block text-[8px] font-bold uppercase tracking-widest text-slate-500">left</span>
+                </p>
+              </div>
+
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#0b1524]">
+                <div
+                  className="h-full bg-gradient-to-r from-[#22c55e] to-[#22d3ee] transition-all"
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                <span>
+                  Squad {t.soldCount}/{t.squadSize}
+                </span>
+                <span>
+                  OS {t.squad?.overseas ?? 0}/{t.maxOverseas}
+                </span>
+                <span>WK {t.squad?.wicketkeepers ?? 0}</span>
+                <span>Bat {t.squad?.batters ?? 0}</span>
+                <span>AR {t.squad?.allRounders ?? 0}</span>
+                <span>Bowl {t.squad?.bowlers ?? 0}</span>
+              </p>
+
+              <ul className="mt-3 divide-y divide-border/60 border-t border-border">
+                {t.sold.length === 0 ? (
+                  <li className="py-3 text-center text-[9px] font-bold uppercase tracking-widest text-slate-600">
+                    Squad is empty — bidding hasn't sold anyone yet
+                  </li>
+                ) : (
+                  t.sold.map((p) => (
+                    <li key={p.playerKey} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="min-w-0 truncate text-[11px] font-bold text-slate-200">{p.name}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-slate-500">{p.role}</span>
+                        <span className="score-nums text-[10px] font-black text-[#facc15]">{inr(p.price)}</span>
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
             </div>
           );
         })}
