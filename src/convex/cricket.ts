@@ -161,13 +161,83 @@ interface CommentaryNames {
   fielder?: string;
 }
 
-export function buildCommentary(d: DeliveryLike, names: CommentaryNames): string {
-  const lead =
-    d.extraType === EXTRA_TYPE.WIDE
-      ? "Wide ball — "
-      : d.extraType === EXTRA_TYPE.NOBALL
-        ? "No-ball — "
-        : "";
+/** Extra match context the scorer feeds in so commentary reads like a broadcast. */
+export interface CommentaryContext {
+  overLabel?: string;
+  teamRuns?: number;
+  teamWickets?: number;
+  target?: number | null;
+  ballsLeft?: number;
+  partnershipRuns?: number;
+  isMaiden?: boolean; // over just completed as a maiden
+  isHatTrickBall?: boolean;
+  dotsBefore?: number; // consecutive dots before this ball
+  freeHit?: boolean;
+  projectedScore?: number;
+}
+
+/** Deterministic pick from a template list — varies without repeating. */
+function pick<T>(arr: T[], seed: number): T {
+  return arr[Math.abs(seed) % arr.length];
+}
+
+function seedOf(d: DeliveryLike): number {
+  let h = d.overNumber * 31 + d.ballNumber * 17;
+  h = (h * 31 + d.batsmanId.length) % 100000;
+  return h;
+}
+
+const SIX_OPENERS = ["SIX!", "MAXIMUM!", "HUGE!", "ALL THE WAY!", "GONE! SIX!"];
+const SIX_LINES = [
+  "{batsman} launches it high over the ropes.",
+  "{batsman} stands tall and smokes it into the stands.",
+  "Excellent connection and that's maximum!",
+  "{batsman} picks the length early and deposits it over the fence.",
+  "Clean strike — the crowd erupts!",
+];
+const FOUR_LINES = [
+  "{batsman} finds the gap and it races to the rope.",
+  "Beautifully timed through the off side.",
+  "{batsman} caresses it past the fielder for four.",
+  "Short and punished — four more!",
+  "{batsman} threads it through the covers perfectly.",
+];
+const WICKET_LINES = [
+  "The big fish is gone!",
+  "The partnership is finally broken.",
+  "The dressing room is stunned.",
+  "Massive moment in this contest!",
+  "What a breakthrough for {bowler}!",
+];
+const CHASE_LINES = [
+  "The pressure is beginning to build on the bowling side.",
+  "The required rate is starting to look very gettable.",
+  "Momentum swinging with every boundary.",
+  "The equation keeps getting simpler for the chase.",
+];
+const DEFENCE_LINES = [
+  "{batsman} defends it solidly.",
+  "Beaten! That one just missed the edge.",
+  "{bowler} nails the yorker — {batsman} digs it out.",
+  "No run — good disciplined bowling.",
+  "{batsman} pushes it to cover. Dot ball.",
+];
+
+/**
+ * Broadcast-style ball commentary. Templates vary per event and insert the
+ * over/ball, batter, bowler, runs, score, target and partnership context.
+ */
+export function buildCommentary(
+  d: DeliveryLike,
+  names: CommentaryNames,
+  ctx?: CommentaryContext,
+): string {
+  const seed = seedOf(d);
+  const over = ctx?.overLabel ?? `${d.overNumber}.${d.ballNumber}`;
+  const score =
+    ctx?.teamRuns != null && ctx?.teamWickets != null
+      ? `${ctx.teamRuns}/${ctx.teamWickets}`
+      : null;
 
   if (d.isWicket) {
     const victim = names.dismissed ?? names.batsman;
@@ -192,28 +262,167 @@ export function buildCommentary(d: DeliveryLike, names: CommentaryNames): string
         how = names.fielder ? `run out (${names.fielder})` : "run out";
         break;
     }
-    return `${lead}OUT! ${victim} ${how}`;
+    const flair = ctx?.isHatTrickBall
+      ? ""
+      : pick(WICKET_LINES, seed + d.overNumber);
+    const hat = ctx?.isHatTrickBall ? "Two down in two — the hat-trick is on!" : "";
+    const parts = [`OUT! ${victim} ${how}.`];
+    if (flair) parts.push(flair);
+    if (hat) parts.push(hat);
+    if (score) parts.push(`${score} now.`);
+    return parts.join(" ");
   }
 
   if (d.extraType === EXTRA_TYPE.WIDE) {
-    return `${lead}${d.extraRuns} extra${d.extraRuns > 1 ? "s" : ""} conceded`;
+    const extra = d.extraRuns > 1 ? `${d.extraRuns - 1} more running — ${d.extraRuns} wide${d.extraRuns > 1 ? "s" : ""}` : "a wide";
+    return `${over} — ${extra}${d.extraRuns > 1 ? " in total" : ""}${score ? ` · ${score}` : ""}.`;
   }
   if (d.extraType === EXTRA_TYPE.NOBALL) {
     if (d.runsScored > 0)
-      return `${lead}${d.runsScored} run${d.runsScored > 1 ? "s" : ""} to ${names.batsman} (free-hit next ball)`;
-    return `${lead}1 extra — free-hit next ball`;
+      return `${over} — No-ball! ${d.runsScored} run${d.runsScored > 1 ? "s" : ""} to ${names.batsman}${ctx?.freeHit ? " · free-hit next ball" : ""}${score ? ` · ${score}` : ""}.`;
+    return `${over} — No-ball called. The free hit is coming${score ? ` · ${score}` : ""}.`;
   }
   if (d.extraType === EXTRA_TYPE.BYE) {
-    return `${d.extraRuns} bye${d.extraRuns > 1 ? "s" : ""} to ${names.bowler}`;
+    return `${over} — ${d.extraRuns} bye${d.extraRuns > 1 ? "s" : ""}${score ? ` · ${score}` : ""}.`;
   }
   if (d.extraType === EXTRA_TYPE.LEGBYE) {
-    return `${d.extraRuns} leg-bye${d.extraRuns > 1 ? "s" : ""} to ${names.bowler}`;
+    return `${over} — ${d.extraRuns} leg-bye${d.extraRuns > 1 ? "s" : ""}${score ? ` · ${score}` : ""}.`;
   }
-  if (d.runsScored === 0) return `${names.bowler} to ${names.batsman}, no run`;
-  if (d.runsScored === 4)
-    return `FOUR! ${names.batsman} finds the boundary`;
-  if (d.runsScored === 6) return `SIX! ${names.batsman} clears the rope`;
-  return `${d.runsScored} run${d.runsScored > 1 ? "s" : ""} to ${names.batsman}`;
+  if (d.runsScored === 0) {
+    const dots = ctx?.dotsBefore ? ` ${ctx.dotsBefore + 1} dots on the trot` : "";
+    return `${over} — ${pick(DEFENCE_LINES, seed)}${dots}.`;
+  }
+  if (d.runsScored === 4) {
+    const chaseCtx =
+      ctx?.target != null && ctx?.teamRuns != null && ctx?.ballsLeft != null
+        ? { target: ctx.target, teamRuns: ctx.teamRuns, ballsLeft: ctx.ballsLeft }
+        : null;
+    const line = `${over} — FOUR! ${pick(FOUR_LINES, seed)}`;
+    return chaseCtx && chaseCtx.teamRuns + 4 >= chaseCtx.target * 0.75
+      ? `${line} ${pick(CHASE_LINES, seed)}`
+      : line;
+  }
+  if (d.runsScored === 6) {
+    return `${over} — ${pick(SIX_OPENERS, seed)} ${pick(SIX_LINES, seed)}`;
+  }
+  if (d.runsScored === 3) {
+    return `${over} — ${names.batsman} opens the face and they run hard — three!`;
+  }
+  return `${over} — ${d.runsScored} run${d.runsScored > 1 ? "s" : ""} to ${names.batsman}${score ? ` · ${score}` : ""}.`;
+}
+
+// ---------------------------------------------------------------------------
+// MVP (Player of the Match) scoring model — clearly specified + configurable.
+// ---------------------------------------------------------------------------
+
+/**
+ * Weights behind the MVP score. Every term is explicit so league owners can
+ * tune the model (see DEFAULT_MVP_CONFIG and the `mvpConfig` settings key).
+ *   - runs × runPoint
+ *   - strike-rate bonus: (SR − srTarget) × srBonusPerPoint, only when SR > target
+ *   - boundary bonus: (fours + sixes) × boundaryBonus
+ *   - wickets × wicketPoint
+ *   - economy bonus: (econTarget − econ) × 10 × econBonusPerPoint, only when
+ *     the bowler has bowled and economy is better than target
+ *   - maidens × maidenBonus; catches/run-outs/stumpings at their point values
+ *   - winning side gets a × winningBonus multiplier (match-winning contribution)
+ */
+export interface MvpConfig {
+  runPoint: number;
+  srTarget: number;
+  srBonusPerPoint: number;
+  boundaryBonus: number;
+  wicketPoint: number;
+  econTarget: number;
+  econBonusPerPoint: number;
+  maidenBonus: number;
+  catchPoint: number;
+  runOutPoint: number;
+  stumpingPoint: number;
+  winningBonus: number;
+}
+
+export const DEFAULT_MVP_CONFIG: MvpConfig = {
+  runPoint: 1,
+  srTarget: 120,
+  srBonusPerPoint: 0.25,
+  boundaryBonus: 0.5,
+  wicketPoint: 25,
+  econTarget: 7.5,
+  econBonusPerPoint: 1.5,
+  maidenBonus: 5,
+  catchPoint: 8,
+  runOutPoint: 12,
+  stumpingPoint: 10,
+  winningBonus: 1.1,
+};
+
+export interface MvpPlayerInput {
+  runs: number;
+  balls: number;
+  fours: number;
+  sixes: number;
+  wickets: number;
+  runsConceded: number;
+  ballsBowled: number;
+  maidens: number;
+  catches: number;
+  runOuts: number;
+  stumpings: number;
+  teamWon: boolean;
+}
+
+export function computeMvpScore(
+  input: MvpPlayerInput,
+  config: MvpConfig = DEFAULT_MVP_CONFIG,
+): number {
+  let score = input.runs * config.runPoint;
+  const sr = input.balls > 0 ? (input.runs / input.balls) * 100 : 0;
+  if (sr > config.srTarget) {
+    score += (sr - config.srTarget) * config.srBonusPerPoint;
+  }
+  score += (input.fours + input.sixes) * config.boundaryBonus;
+  score += input.wickets * config.wicketPoint;
+  const econ = input.ballsBowled > 0 ? input.runsConceded / (input.ballsBowled / 6) : 0;
+  if (input.ballsBowled > 0 && econ < config.econTarget) {
+    score += (config.econTarget - econ) * 10 * config.econBonusPerPoint;
+  }
+  score += input.maidens * config.maidenBonus;
+  score += input.catches * config.catchPoint;
+  score += input.runOuts * config.runOutPoint;
+  score += input.stumpings * config.stumpingPoint;
+  if (input.teamWon) score *= config.winningBonus;
+  return Math.round(score * 10) / 10;
+}
+
+// ---- milestone helpers -----------------------------------------------------
+
+export const BATTER_MILESTONES = [25, 50, 75, 100, 150, 200] as const;
+export const TEAM_MILESTONES = [50, 100, 150, 200, 250] as const;
+export const PARTNERSHIP_MILESTONES = [50, 100, 150] as const;
+export const BOWLER_HAULS = [3, 4, 5, 6] as const;
+
+export function reachedMilestone(
+  milestones: readonly number[],
+  before: number,
+  after: number,
+): number | null {
+  for (const m of milestones) {
+    if (before < m && after >= m) return m;
+  }
+  return null;
+}
+
+/** True when the last `n` consecutive legal deliveries by this bowler were wickets. */
+export function isHatTrick(
+  deliveries: { bowlerId: string; isWicket: boolean; extraType: ExtraType; overNumber: number; ballNumber: number }[],
+): boolean {
+  const seq = deliveries.slice(-3);
+  if (seq.length < 3) return false;
+  const bowler = seq[seq.length - 1].bowlerId;
+  return seq.every(
+    (d) => d.bowlerId === bowler && d.isWicket && isLegalBall(d.extraType),
+  );
 }
 
 // ---- crease state (replayable so undo stays correct) ----------------------
@@ -358,6 +567,86 @@ export function aggregateBowlerStats(
     }
   }
   return map;
+}
+
+// ---- partnerships ----------------------------------------------------------
+
+export interface Partnership {
+  pair: [string, string];
+  runs: number;
+  balls: number;
+}
+
+/**
+ * Rebuild every partnership in an innings. A partnership runs between the two
+ * batters at the crease and ends when one is dismissed (or the innings ends).
+ * Runs credited = runs off the bat; balls = legal balls faced by the pair.
+ */
+export function aggregatePartnerships(
+  deliveries: DeliveryLike[],
+  openingStrikerId?: Id<"players">,
+  openingNonStrikerId?: Id<"players">,
+): { list: Partnership[]; current: Partnership | null; highest: Partnership | null } {
+  let striker = openingStrikerId;
+  let nonStriker = openingNonStrikerId;
+  const pairKey = (a?: Id<"players">, b?: Id<"players">) =>
+    a && b ? [a, b].sort().join("|") : `${a ?? ""}|${b ?? ""}`;
+  let curKey = pairKey(striker, nonStriker);
+  let cur: Partnership = { pair: [striker ?? "", nonStriker ?? ""], runs: 0, balls: 0 };
+  const list: Partnership[] = [];
+  let prevOver = 0;
+
+  const pushCur = () => {
+    if (cur.runs > 0 || cur.balls > 0) list.push({ ...cur });
+  };
+
+  for (const d of deliveries) {
+    // A new over swaps the ends — the pair itself is unchanged.
+    if (d.overNumber !== prevOver && prevOver !== 0 && striker && nonStriker) {
+      const t = striker;
+      striker = nonStriker;
+      nonStriker = t;
+      cur.pair = [striker, nonStriker];
+    }
+    // Seed the pair from the first ball if the innings row has no openers yet.
+    if (!striker) striker = d.batsmanId;
+    if (!nonStriker) nonStriker = d.nonStrikerId ?? d.batsmanId;
+    curKey = pairKey(striker, nonStriker);
+    cur.pair = [striker, nonStriker];
+
+    if (isLegalBall(d.extraType)) cur.balls += 1;
+    cur.runs += d.runsScored;
+
+    if (d.isWicket) {
+      pushCur();
+      const dismissed = d.dismissedBatterId ?? d.batsmanId;
+      const survivor = striker === dismissed ? nonStriker : striker;
+      striker = d.newBatsmanId ?? striker;
+      nonStriker = survivor;
+      cur = { pair: [striker ?? "", nonStriker ?? ""], runs: 0, balls: 0 };
+      curKey = pairKey(striker, nonStriker);
+    } else {
+      const rotateBy =
+        d.runsScored +
+        (d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
+          ? d.extraRuns
+          : 0);
+      if (rotateBy % 2 === 1 && striker && nonStriker) {
+        const t = striker;
+        striker = nonStriker;
+        nonStriker = t;
+      }
+    }
+    prevOver = d.overNumber;
+  }
+
+  const current = cur.runs > 0 || cur.balls > 0 ? cur : null;
+  const all = current ? [...list, current] : list;
+  const highest =
+    all.length > 0
+      ? all.reduce((a, b) => (b.runs > a.runs || (b.runs === a.runs && b.balls < a.balls) ? b : a))
+      : null;
+  return { list, current, highest };
 }
 
 // ---- per-over breakdown ---------------------------------------------------

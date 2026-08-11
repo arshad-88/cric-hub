@@ -31,6 +31,8 @@ export type PoolPlayer = {
   teamShort?: string;
   career?: IplStatLine;
   form?: IplStatLine;
+  /** "IND" for Indian players, "OS" for overseas (squad constraint tracking). */
+  nationality?: "IND" | "OS";
 };
 
 const BID_WINDOW_MS = 45_000; // first call window
@@ -105,6 +107,13 @@ export const get = query({
         if (owner) userMap.set(owner._id, owner);
       }
     }
+    const roleCounts = (sold: { role: string; nationality?: string }[]) => ({
+      wicketkeepers: sold.filter((s) => s.role === "Wicketkeeper").length,
+      batters: sold.filter((s) => s.role === "Batter").length,
+      allRounders: sold.filter((s) => s.role === "All-rounder").length,
+      bowlers: sold.filter((s) => s.role === "Bowler").length,
+      overseas: sold.filter((s) => s.nationality === "OS").length,
+    });
     return {
       ...auction,
       teams: teams.map((t) => ({
@@ -114,8 +123,12 @@ export const get = query({
         color: t.color,
         ownerName: userMap.get(t.ownerId)?.name ?? "Player",
         purseRemaining: t.purseRemaining,
+        purse: auction.purse,
+        squadSize: auction.squadSize,
+        maxOverseas: auction.maxOverseas ?? 8,
         soldCount: t.sold.length,
         sold: t.sold,
+        squad: roleCounts(t.sold),
       })),
       currentBidderName: auction.currentBidderTeamId
         ? (teams.find((t) => t._id === auction.currentBidderTeamId)?.name ?? null)
@@ -199,6 +212,7 @@ async function buildCustomPool(
       role: roleLabel(p.role),
       basePrice: 50, // ₹50 lakh default
       teamShort: team.shortCode,
+      nationality: "IND",
       career:
         career.matches > 0
           ? {
@@ -234,9 +248,12 @@ export const create = mutation({
   args: {
     mode: v.union(v.literal("ipl"), v.literal("custom")),
     title: v.string(),
-    tournamentId: v.optional(v.id("tournaments")),
-    purse: v.number(),
+    tournamentId: v.optional(v.id("tournaments")),      purse: v.number(),
     squadSize: v.number(),
+    maxOverseas: v.optional(v.number()),
+    minWicketkeepers: v.optional(v.number()),
+    minBowlers: v.optional(v.number()),
+    minAllRounders: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
@@ -251,6 +268,7 @@ export const create = mutation({
         basePrice: p.base,
         wiki: p.wiki,
         teamShort: p.team,
+        nationality: p.country === "India" ? "IND" : "OS",
         career: p.career,
         form: p.form,
       }));
@@ -271,6 +289,10 @@ export const create = mutation({
       status: "SETUP",
       roomCode: await uniqueRoomCode(ctx),
       pool: pool.map((p) => ({ ...p })),
+      maxOverseas: args.maxOverseas,
+      minWicketkeepers: args.minWicketkeepers,
+      minBowlers: args.minBowlers,
+      minAllRounders: args.minAllRounders,
       soldCount: 0,
       updatedAt: Date.now(),
     });
@@ -391,6 +413,24 @@ export const finishPlayer = mutation({
     if (sold && bidderTeamId) {
       const bidder = await ctx.db.get(bidderTeamId);
       if (bidder) {
+        // ---- squad constraint validation ---------------------------------
+        if (bidder.sold.length >= auction.squadSize) {
+          throw new Error(
+            `Squad full — ${bidder.name} already have ${auction.squadSize} players.`,
+          );
+        }
+        if (auction.currentBid > bidder.purseRemaining) {
+          throw new Error("That bid exceeds the team's remaining purse.");
+        }
+        const maxOverseas = auction.maxOverseas ?? 8;
+        if (
+          player.nationality === "OS" &&
+          bidder.sold.filter((s) => s.nationality === "OS").length >= maxOverseas
+        ) {
+          throw new Error(
+            `Overseas limit reached — ${bidder.name} already have ${maxOverseas} overseas players.`,
+          );
+        }
         await ctx.db.patch(bidderTeamId, {
           purseRemaining: bidder.purseRemaining - auction.currentBid,
           sold: [
@@ -405,6 +445,7 @@ export const finishPlayer = mutation({
               teamShort: player.teamShort,
               career: player.career,
               form: player.form,
+              nationality: player.nationality,
             },
           ],
         });

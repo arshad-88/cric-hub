@@ -17,6 +17,7 @@ import {
   superOverWinnerId,
   teamNRR,
 } from "./cricket";
+import { WICKET_TYPE } from "./schema";
 import { getActiveTournament } from "./helpers";
 
 const lite = (t: { _id: Id<"teams">; name: string; shortCode: string; color: string }) => ({
@@ -246,6 +247,75 @@ export const get = query({
       )
       .slice(0, 10);
 
+    // ---- fielding (catches / run-outs / stumpings) --------------------------
+    const catchesAgg = new Map<string, number>();
+    const runOutsAgg = new Map<string, number>();
+    const stumpingsAgg = new Map<string, number>();
+    for (const d of allDeliveries) {
+      if (!d.isWicket || !d.fielderId) continue;
+      const pid = String(d.fielderId);
+      if (d.wicketType === WICKET_TYPE.CAUGHT)
+        catchesAgg.set(pid, (catchesAgg.get(pid) ?? 0) + 1);
+      else if (d.wicketType === WICKET_TYPE.RUN_OUT)
+        runOutsAgg.set(pid, (runOutsAgg.get(pid) ?? 0) + 1);
+      else if (d.wicketType === WICKET_TYPE.STUMPED)
+        stumpingsAgg.set(pid, (stumpingsAgg.get(pid) ?? 0) + 1);
+    }
+
+    const row = (pid: string) => {
+      const p = playerMap.get(pid as Id<"players">);
+      const team = p ? teamMap.get(p.teamId) : null;
+      return {
+        playerId: pid,
+        name: p?.name ?? "Unknown",
+        team: team ? lite(team) : null,
+      };
+    };
+
+    const mostSixes = [...batterAgg.values()]
+      .filter((b) => b.sixes > 0)
+      .map((b) => ({ ...row(String(b.playerId)), sixes: b.sixes, runs: b.runs, sr: b.balls > 0 ? Number(((b.runs / b.balls) * 100).toFixed(1)) : 0 }))
+      .sort((a, b) => b.sixes - a.sixes || b.runs - a.runs)
+      .slice(0, 10);
+
+    const mostFours = [...batterAgg.values()]
+      .filter((b) => b.fours > 0)
+      .map((b) => ({ ...row(String(b.playerId)), fours: b.fours, runs: b.runs }))
+      .sort((a, b) => b.fours - a.fours || b.runs - a.runs)
+      .slice(0, 10);
+
+    const bestEconomy = [...bowlerAgg.values()]
+      .filter((b) => b.balls >= 12) // min 2 overs to qualify
+      .map((b) => ({
+        ...row(String(b.playerId)),
+        econ: runRate(b.runs, b.balls),
+        overs: formatOvers(b.balls),
+        wickets: b.wickets,
+        runs: b.runs,
+      }))
+      .sort((a, b) => a.econ - b.econ || b.wickets - a.wickets)
+      .slice(0, 10);
+
+    const bestAverage = [...batterAgg.values()]
+      .filter((b) => b.balls >= 20)
+      .map((b) => {
+        const dismissed = b.dismissal ? 1 : 0;
+        return {
+          ...row(String(b.playerId)),
+          runs: b.runs,
+          dismissals: dismissed,
+          avg: dismissed > 0 ? Number((b.runs / dismissed).toFixed(2)) : b.runs,
+          sr: b.balls > 0 ? Number(((b.runs / b.balls) * 100).toFixed(1)) : 0,
+        };
+      })
+      .sort((a, b) => b.avg - a.avg || b.runs - a.runs)
+      .slice(0, 10);
+
+    const mostCatches = [...catchesAgg.entries()]
+      .map(([pid, catches]) => ({ ...row(pid), catches, runOuts: runOutsAgg.get(pid) ?? 0, stumpings: stumpingsAgg.get(pid) ?? 0 }))
+      .sort((a, b) => b.catches - a.catches || b.runOuts - a.runOuts)
+      .slice(0, 10);
+
     return {
       tournament: {
         id: tournament._id,
@@ -255,6 +325,11 @@ export const get = query({
       pointsTable,
       topBatters,
       topBowlers,
+      mostSixes,
+      mostFours,
+      bestEconomy,
+      bestAverage,
+      mostCatches,
     };
   },
 });

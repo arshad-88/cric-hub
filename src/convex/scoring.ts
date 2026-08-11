@@ -10,15 +10,23 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { requireOrganizer } from "./helpers";
 import {
+  aggregatePartnerships,
+  BATTER_MILESTONES,
+  BOWLER_HAULS,
+  bowlerCredited,
   buildCommentary,
   computeMatchResult,
   computeSuperOverResult,
   countBoundaries,
+  isHatTrick,
   isInningsComplete,
   isLegalBall,
   isSuperOverComplete,
+  PARTNERSHIP_MILESTONES,
+  reachedMilestone,
   replayCrease,
   superOverWinnerId,
+  TEAM_MILESTONES,
 } from "./cricket";
 import type { DeliveryLike } from "./cricket";
 import { EXTRA_TYPE, extraTypeValidator, wicketTypeValidator } from "./schema";
@@ -309,6 +317,7 @@ export const recordDelivery = mutation({
     dismissedBatterId: v.optional(v.id("players")),
     fielderId: v.optional(v.id("players")),
     newBatsmanId: v.optional(v.id("players")),
+    shotRegion: v.optional(v.string()), // scoring-shot placement for the wagon wheel
   },
   handler: async (ctx, args) => {
     const match = await ctx.db.get(args.matchId);
@@ -397,19 +406,56 @@ export const recordDelivery = mutation({
         args.dismissedBatterId ? ctx.db.get(args.dismissedBatterId) : null,
         args.fielderId ? ctx.db.get(args.fielderId) : null,
       ]);
+
+    // ---- pre-ball context (commentary + milestone detection) ----------------
+    const overLabel = `${overNumber}.${ballNumber}`;
+    const teamRunsBefore = deliveries.reduce((s, d) => s + d.totalRuns, 0);
+    const teamWicketsBefore = deliveries.filter((d) => d.isWicket).length;
+    const batterRunsBefore = deliveries
+      .filter((d) => d.batsmanId === args.batsmanId)
+      .reduce((s, d) => s + d.runsScored, 0);
+    const teamRunsAfter = teamRunsBefore + totalRuns;
+    const batterRunsAfter = batterRunsBefore + args.runsScored;
+    const ballsLeft = oversAllocated * 6 - inn.ballsBowled;
+
+    let dotsBefore = 0;
+    for (let i = deliveries.length - 1; i >= 0; i--) {
+      const p = deliveries[i];
+      if (p.totalRuns === 0 && isLegalBall(p.extraType)) dotsBefore += 1;
+      else break;
+    }
+    const legalTail = deliveries.filter((d) => isLegalBall(d.extraType)).slice(-2);
+    const isHatTrickBall =
+      legalTail.length === 2 &&
+      legalTail.every((d) => d.isWicket && d.bowlerId === args.bowlerId);
+    const freeHit =
+      deliveries.length > 0 &&
+      deliveries[deliveries.length - 1].extraType === EXTRA_TYPE.NOBALL;
+
+    const newDelivery: DeliveryLike = {
+      ...args,
+      overNumber,
+      ballNumber,
+      totalRuns,
+      isWicket: args.isWicket,
+    };
     const commentary = buildCommentary(
-      {
-        ...args,
-        overNumber,
-        ballNumber,
-        totalRuns,
-        isWicket: args.isWicket,
-      },
+      newDelivery,
       {
         bowler: bowlerDoc?.name ?? "?",
         batsman: batsmanDoc?.name ?? "?",
         dismissed: dismissedDoc?.name,
         fielder: fielderDoc?.name,
+      },
+      {
+        overLabel,
+        teamRuns: teamRunsAfter,
+        teamWickets: teamWicketsBefore + (args.isWicket ? 1 : 0),
+        target: inn.target ?? null,
+        ballsLeft,
+        isHatTrickBall,
+        dotsBefore,
+        freeHit,
       },
     );
 
@@ -430,6 +476,7 @@ export const recordDelivery = mutation({
       dismissedBatterId: args.dismissedBatterId,
       fielderId: args.fielderId,
       newBatsmanId: args.newBatsmanId,
+      shotRegion: args.shotRegion,
       commentary,
     });
 
@@ -437,54 +484,113 @@ export const recordDelivery = mutation({
     if (!rec) throw new Error("Innings disappeared.");
     const { totalRuns: runsNow, wickets: wktsNow, ballsBowled: ballsNow } = rec.inn;
 
-    // ---- live event detection ---------------------------------------------
-    const overLabel = `${overNumber}.${ballNumber}`;
-    const batterRunsBefore = deliveries
-      .filter((d) => d.batsmanId === args.batsmanId)
-      .reduce((s, d) => s + d.runsScored, 0);
-    const batterRunsAfter = batterRunsBefore + args.runsScored;
-    const teamRunsBefore = deliveries.reduce((s, d) => s + d.totalRuns, 0);
-    const teamRunsAfter = teamRunsBefore + totalRuns;
-
     const teamNameOf = async (teamId: Id<"teams">) =>
       (await ctx.db.get(teamId))?.name ?? "?";
-
-    if (args.isWicket) {
-      await ctx.runMutation(internal.notifications.recordEvent, {
+    const event = (args: {
+      type: "wicket" | "milestone" | "team_milestone";
+      title: string;
+      message: string;
+    }) =>
+      ctx.runMutation(internal.notifications.recordEvent, {
         matchId: match._id,
-        type: "wicket",
-        title: "WICKET!",
-        message: commentary,
+        type: args.type,
+        title: args.title,
+        message: args.message,
         overLabel,
         inningsNumber: inn.number,
       });
+
+    // ---- wicket -------------------------------------------------------------
+    if (args.isWicket) {
+      await event({
+        type: "wicket",
+        title: "WICKET!",
+        message: commentary,
+      });
     }
-    for (const m of [50, 100]) {
-      if (batterRunsBefore < m && batterRunsAfter >= m) {
-        await ctx.runMutation(internal.notifications.recordEvent, {
-          matchId: match._id,
-          type: "milestone",
-          title: m === 50 ? "FIFTY!" : "CENTURY!",
-          message: `${batsmanDoc?.name ?? "?"} brings up ${
-            m === 50 ? "a fifty" : "a hundred"
-          }`,
-          overLabel,
-          inningsNumber: inn.number,
-        });
-      }
+
+    // ---- batter milestones: 25 / 50 / 75 / 100 / 150 / 200 -------------------
+    const batterM = reachedMilestone(BATTER_MILESTONES, batterRunsBefore, batterRunsAfter);
+    if (batterM) {
+      const title =
+        batterM === 50
+          ? "FIFTY!"
+          : batterM === 100
+            ? "CENTURY!"
+            : `${batterM} UP!`;
+      await event({
+        type: "milestone",
+        title,
+        message: `${batsmanDoc?.name ?? "?"} brings up ${batterM} — off ${
+          deliveries.filter((d) => d.batsmanId === args.batsmanId && isLegalBall(d.extraType)).length + (isLegalBall(args.extraType) ? 1 : 0)
+        } balls`,
+      });
     }
-    for (const m of [50, 100, 150, 200]) {
-      if (teamRunsBefore < m && teamRunsAfter >= m) {
-        const btName = await teamNameOf(inn.battingTeamId);
-        await ctx.runMutation(internal.notifications.recordEvent, {
-          matchId: match._id,
-          type: "team_milestone",
-          title: `${btName} ${m} up`, // e.g. "Warriors 100 up"
-          message: `${btName} reach ${m} — ${runsNow}/${wktsNow} (${overLabel})`,
-          overLabel,
-          inningsNumber: inn.number,
-        });
-      }
+
+    // ---- bowler hauls: 3 / 4 / 5 / 6 wickets ---------------------------------
+    const bowlerWktsBefore = deliveries.filter(
+      (d) => d.bowlerId === args.bowlerId && bowlerCredited(d),
+    ).length;
+    const bowlerWktsAfter =
+      bowlerWktsBefore + (bowlerCredited(newDelivery) ? 1 : 0);
+    const haul = reachedMilestone(BOWLER_HAULS, bowlerWktsBefore, bowlerWktsAfter);
+    if (haul) {
+      await event({
+        type: "milestone",
+        title: `${haul}-WICKET HAUL!`,
+        message: `${bowlerDoc?.name ?? "?"} has ${haul} wickets — ${teamRunsAfter}/${teamWicketsBefore + (args.isWicket ? 1 : 0)}`,
+      });
+    }
+
+    // ---- hat-trick ball + hat-trick ------------------------------------------
+    if (isHatTrickBall) {
+      await event({
+        type: "milestone",
+        title: "HAT-TRICK BALL!",
+        message: `${bowlerDoc?.name ?? "?"} took two in two — can he complete the hat-trick?`,
+      });
+    }
+    if (args.isWicket && isHatTrick([...deliveries, newDelivery])) {
+      await event({
+        type: "milestone",
+        title: "HAT-TRICK!",
+        message: `${bowlerDoc?.name ?? "?"} — three wickets in three balls! INCREDIBLE!`,
+      });
+    }
+
+    // ---- partnership milestones: 50 / 100 / 150 -------------------------------
+    const partsBefore = aggregatePartnerships(
+      deliveries,
+      inn.openingStrikerId,
+      inn.openingNonStrikerId,
+    );
+    const partsAfter = aggregatePartnerships(
+      [...deliveries, newDelivery],
+      inn.openingStrikerId,
+      inn.openingNonStrikerId,
+    );
+    const pBefore = partsBefore.current?.runs ?? 0;
+    const pAfter = partsAfter.current?.runs ?? 0;
+    const pM = reachedMilestone(PARTNERSHIP_MILESTONES, pBefore, pAfter);
+    if (pM) {
+      const partnerId = partsAfter.current?.pair.find((id) => id !== args.batsmanId);
+      const partnerDoc = partnerId ? await ctx.db.get(partnerId as Id<"players">) : null;
+      await event({
+        type: "milestone",
+        title: `${pM} PARTNERSHIP!`,
+        message: `${batsmanDoc?.name ?? "?"} & ${partnerDoc?.name ?? "?"} — ${pM} runs together`,
+      });
+    }
+
+    // ---- team milestones: 50 / 100 / 150 / 200 / 250 --------------------------
+    const teamM = reachedMilestone(TEAM_MILESTONES, teamRunsBefore, teamRunsAfter);
+    if (teamM) {
+      const btName = await teamNameOf(inn.battingTeamId);
+      await event({
+        type: "team_milestone",
+        title: `${btName} ${teamM} up`,
+        message: `${btName} reach ${teamM} — ${runsNow}/${wktsNow} (${overLabel})`,
+      });
     }
 
     // ---- innings / match completion ----------------------------------------

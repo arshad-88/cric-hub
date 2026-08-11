@@ -1,3 +1,4 @@
+import { PlayerLink } from "@/components/PlayerLink";
 import { BallChip, MicroLabel, TeamMark } from "@/components/swiss";
 import type { InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,38 @@ function BallsRow({ innings }: { innings: InningsView }) {
           <BallChip key={b.key} symbol={b.symbol} kind={b.kind} size="sm" />
         ))
       )}
+    </div>
+  );
+}
+
+function CurrentPartnership({ innings }: { innings: InningsView }) {
+  const cur = innings.partnerships.current;
+  if (!cur) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-border/60 bg-[#22c55e]/[0.04] px-3 py-1.5 text-[10px]">
+      <MicroLabel className="text-[#22c55e]">Current partnership</MicroLabel>
+      <span className="score-nums font-bold text-slate-100">
+        {cur.runs} ({cur.balls})
+      </span>
+      <span className="truncate font-medium text-slate-400">
+        {cur.batters.filter(Boolean).join(" · ")}
+      </span>
+    </div>
+  );
+}
+
+function FallOfWickets({ innings }: { innings: InningsView }) {
+  const fow = innings.fow;
+  if (fow.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-border/60 px-3 py-1.5 text-[10px]">
+      <MicroLabel className="text-slate-500">FOW</MicroLabel>
+      {fow.map((f) => (
+        <span key={f.wickets} className="font-medium text-slate-400" title={f.batterName}>
+          {f.score}/{f.wickets}
+          <span className="text-slate-600"> ({f.overLabel})</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -51,14 +84,17 @@ function BattersTable({ innings }: { innings: InningsView }) {
           >
             <div className="min-w-0">
               <span className="flex items-baseline gap-1.5">
-                <span
+                <PlayerLink
+                  id={b.playerId}
+                  name={b.name}
                   className={cn(
-                    "truncate text-sm font-bold text-slate-100 transition-opacity",
+                    "text-sm font-bold text-slate-100 transition-opacity",
                     b.status === "out" && "text-slate-400/70 opacity-60",
                   )}
                 >
                   {b.name}
-                </span>
+                  {b.status === "notOut" && <span className="ml-0.5 text-slate-500">*</span>}
+                </PlayerLink>
                 {b.isStriker && (
                   <span className="shrink-0 bg-[#22c55e] px-1 text-[8px] font-extrabold uppercase tracking-wider text-[#052e16]">
                     ●
@@ -93,7 +129,7 @@ function BowlersTable({ innings }: { innings: InningsView }) {
     <div className="border-t border-border">
       <div className="grid grid-cols-[1fr_auto] gap-x-3 border-b border-border px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-500">
         <span>Bowler</span>
-        <span className="score-nums">O&nbsp;&nbsp;M&nbsp;&nbsp;R&nbsp;&nbsp;W&nbsp;&nbsp;Econ</span>
+        <span className="score-nums">O&nbsp;&nbsp;M&nbsp;&nbsp;R&nbsp;&nbsp;W&nbsp;&nbsp;Econ&nbsp;&nbsp;Dots&nbsp;&nbsp;Wd&nbsp;&nbsp;Nb</span>
       </div>
       <ul>
         {innings.bowlers.map((b) => (
@@ -102,7 +138,9 @@ function BowlersTable({ innings }: { innings: InningsView }) {
             className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 border-b border-border/60 px-3 py-1.5 last:border-0"
           >
             <span className="flex items-baseline gap-1.5">
-              <span className="truncate text-sm font-semibold text-slate-100">{b.name}</span>
+              <PlayerLink id={b.playerId} name={b.name} className="text-sm font-semibold text-slate-100">
+                {b.name}
+              </PlayerLink>
               {innings.bowler?._id === b.playerId && (
                 <span className="bg-[#ef4444] px-1 text-[8px] font-extrabold uppercase tracking-wider text-white glow-red">
                   ON
@@ -111,7 +149,40 @@ function BowlersTable({ innings }: { innings: InningsView }) {
             </span>
             <span className="score-nums whitespace-nowrap text-xs font-semibold text-slate-200">
               {b.overs}&nbsp;&nbsp;{b.maidens}&nbsp;&nbsp;{b.runs}&nbsp;&nbsp;
-              {b.wickets}&nbsp;&nbsp;{b.econ}
+              {b.wickets}&nbsp;&nbsp;{b.econ}&nbsp;&nbsp;
+              <span className="text-slate-400">{b.dots}</span>&nbsp;&nbsp;
+              <span className="text-slate-500">{b.wides}</span>&nbsp;&nbsp;
+              <span className="text-slate-500">{b.noballs}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PartnershipsBlock({ innings }: { innings: InningsView }) {
+  const { list, highest } = innings.partnerships;
+  if (list.length === 0 && !highest) return null;
+  return (
+    <div className="border-t border-border px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <MicroLabel className="text-slate-500">Partnerships</MicroLabel>
+        {highest && (
+          <span className="text-[10px] font-medium text-slate-500">
+            Highest: <span className="score-nums font-bold text-[#facc15]">{highest.runs}</span>{" "}
+            ({highest.batters.filter(Boolean).join(" · ")})
+          </span>
+        )}
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {list.map((p, i) => (
+          <li key={i} className="flex items-baseline justify-between gap-2 text-[11px]">
+            <span className="truncate text-slate-300">
+              {p.batters.filter(Boolean).join(" · ") || "—"}
+            </span>
+            <span className="score-nums shrink-0 text-xs font-bold text-slate-100">
+              {p.runs} <span className="text-[9px] font-medium text-slate-500">({p.balls})</span>
             </span>
           </li>
         ))}
@@ -129,6 +200,7 @@ export function InningsPanel({
 }) {
   const e = innings.extras;
   const extrasLine = `Extras ${e.total} (wd ${e.wide}, nb ${e.noball}, b ${e.bye}, lb ${e.legbye})`;
+  const chasing = innings.number === 2 || innings.number === 4;
 
   return (
     <div
@@ -164,15 +236,20 @@ export function InningsPanel({
               Target {innings.target}
             </p>
           )}
+          {chasing && innings.needed != null && innings.ballsLeft != null && (
+            <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-[#22c55e]">
+              Need {innings.needed} off {innings.ballsLeft}
+            </p>
+          )}
           <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-slate-400">
             CRR {innings.crr}
           </p>
-          {innings.rrr != null && innings.number === 2 && (
+          {innings.rrr != null && chasing && (
             <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-[#22d3ee] led-cyan">
               RRR {innings.rrr}
             </p>
           )}
-          {innings.dlsPar != null && innings.number === 2 && (
+          {innings.dlsPar != null && chasing && (
             <p className="score-nums text-[10px] font-bold uppercase tracking-wider text-[#a78bfa] led-cyan">
               DLS Par {innings.dlsPar}
             </p>
@@ -181,6 +258,8 @@ export function InningsPanel({
       </div>
 
       <BallsRow innings={innings} />
+      <CurrentPartnership innings={innings} />
+      <FallOfWickets innings={innings} />
 
       <div className="border-b border-border/60 px-3 py-1.5 text-[10px] font-medium text-slate-500">
         {extrasLine}
@@ -188,6 +267,7 @@ export function InningsPanel({
 
       <BattersTable innings={innings} />
       <BowlersTable innings={innings} />
+      <PartnershipsBlock innings={innings} />
     </div>
   );
 }

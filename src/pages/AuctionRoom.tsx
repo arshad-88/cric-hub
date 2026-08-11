@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
+import { playSound, useSoundEnabled } from "@/hooks/use-sound";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -285,7 +286,7 @@ export default function AuctionRoom() {
                 )}
               </p>
               <p className="score-nums mt-1 text-[10px] font-bold text-slate-500">
-                {inr(t.purseRemaining)} left · {t.soldCount} signed
+                {inr(t.purseRemaining)} left · {t.soldCount}/{t.squadSize} · OS {t.squad?.overseas ?? 0}/{t.maxOverseas ?? 8}
               </p>
             </div>
           ))}
@@ -479,8 +480,18 @@ interface TeamView {
   color: string;
   ownerName: string;
   purseRemaining: number;
+  purse: number;
+  squadSize: number;
+  maxOverseas: number;
   soldCount: number;
   sold: SoldPlayer[];
+  squad: {
+    wicketkeepers: number;
+    batters: number;
+    allRounders: number;
+    bowlers: number;
+    overseas: number;
+  };
 }
 
 interface RoomView {
@@ -566,9 +577,12 @@ function LiveBlock({
     }
   };
 
+  const { enabled: soundOn } = useSoundEnabled();
   const doFinish = async (sold: boolean) => {
     try {
-      await finishPlayer({ auctionId: room._id, sold });
+      const res = await finishPlayer({ auctionId: room._id, sold });
+      if (res?.sold) playSound("sold", soundOn);
+      else if (res && !res.sold && room.currentBidderTeamId == null) playSound("unsold", soundOn);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not finish the player.");
     }
@@ -886,9 +900,9 @@ function Results({ room }: { room: RoomView }) {
                 </li>
               ))}
             </ul>
-            <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-              <span>Total rating {total} · avg {avg}</span>
-              <span>{inr(team.purseRemaining)} purse left</span>
+            <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-500">
+              <span>Wk {team.squad?.wicketkeepers ?? 0} · Bat {team.squad?.batters ?? 0} · AR {team.squad?.allRounders ?? 0} · Bowl {team.squad?.bowlers ?? 0}</span>
+              <span>{inr(team.purseRemaining)} purse</span>
             </div>
           </div>
         ))}

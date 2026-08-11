@@ -43,6 +43,9 @@ export interface BowlerView {
   runs: number;
   wickets: number;
   econ: number;
+  dots: number;
+  wides: number;
+  noballs: number;
 }
 
 export interface OverView {
@@ -74,6 +77,15 @@ export interface InningsView {
   commentary: BallView[];
   overs: OverView[];
   extras: { total: number; wide: number; noball: number; bye: number; legbye: number };
+  fow: { score: number; wickets: number; overLabel: string; batterName: string }[];
+  partnerships: {
+    list: { runs: number; balls: number; batters: string[] }[];
+    current: { runs: number; balls: number; batters: string[] } | null;
+    highest: { runs: number; balls: number; batters: string[] } | null;
+  };
+  wagonWheel: { overLabel: string; runs: number; region: string }[];
+  needed: number | null;
+  ballsLeft: number | null;
   isCurrent: boolean;
   isComplete: boolean;
   crr: number;

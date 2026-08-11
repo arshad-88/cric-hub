@@ -168,6 +168,8 @@ const schema = defineSchema(
       shortCode: v.string(), // e.g. "VW"
       color: v.string(), // hex accent for identity blocks
       logoUrl: v.optional(v.string()),
+      coach: v.optional(v.string()), // team coach / mentor name
+      captainId: v.optional(v.id("players")), // the captain (also part of the XI)
     }).index("by_tournament", ["tournamentId"]),
 
     // players (id, team_id, name, phone, role, styles, jersey). `phone` lets
@@ -180,6 +182,8 @@ const schema = defineSchema(
       battingStyle: v.optional(v.string()), // e.g. "Right-hand bat"
       bowlingStyle: v.optional(v.string()), // e.g. "Right-arm off spin"
       jerseyNumber: v.optional(v.number()),
+      isPlayingXI: v.optional(v.boolean()), // selected for the match-day eleven
+      isCaptain: v.optional(v.boolean()), // captain badge (also in the XI)
     }).index("by_team", ["teamId"]),
 
     // matches (id, tournament_id, team_a_id, team_b_id, status, toss, overs, stream_url)
@@ -268,6 +272,7 @@ const schema = defineSchema(
               econ: v.number(),
             }),
           ),
+          nationality: v.optional(v.union(v.literal("IND"), v.literal("OS"))),
         }),
       ),
       // live auction state
@@ -276,6 +281,11 @@ const schema = defineSchema(
       currentBidderTeamId: v.optional(v.id("auctionTeams")),
       bidEndsAt: v.optional(v.number()),
       soldCount: v.number(),
+      // squad constraint config (validated on every bid / SOLD)
+      maxOverseas: v.optional(v.number()),
+      minWicketkeepers: v.optional(v.number()),
+      minBowlers: v.optional(v.number()),
+      minAllRounders: v.optional(v.number()),
       updatedAt: v.number(),
     })
       .index("by_room_code", ["roomCode"])
@@ -297,6 +307,7 @@ const schema = defineSchema(
           photoUrl: v.optional(v.string()),
           wiki: v.optional(v.string()),
           teamShort: v.optional(v.string()),
+          nationality: v.optional(v.union(v.literal("IND"), v.literal("OS"))),
           career: v.optional(
             v.object({
               matches: v.number(),
@@ -385,6 +396,10 @@ const schema = defineSchema(
       fielderId: v.optional(v.id("players")),
       newBatsmanId: v.optional(v.id("players")), // replacement at the crease
       commentary: v.string(), // pre-rendered ball-by-ball text
+      // shot placement recorded by the scorer for scoring shots (wagon wheel).
+      // One of: cover, mid-off, long-on, midwicket, fine-leg, third-man,
+      // square-leg, deep-midwicket, long-off, point, extra-cover, straight
+      shotRegion: v.optional(v.string()),
     })
       .index("by_innings", ["inningsId"])
       .index("by_match", ["matchId"]),

@@ -3,6 +3,7 @@ import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { NotificationAlerts } from "@/components/NotificationAlerts";
+import { SoundEngine } from "@/hooks/use-sound";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
@@ -28,6 +29,7 @@ const MatchDetail = lazy(() => import("./pages/MatchDetail.tsx"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard.tsx"));
 const Teams = lazy(() => import("./pages/Teams.tsx"));
 const TeamDetail = lazy(() => import("./pages/TeamDetail.tsx"));
+const PlayerProfile = lazy(() => import("./pages/PlayerProfile.tsx"));
 const Tournaments = lazy(() => import("./pages/Tournaments.tsx"));
 const Auction = lazy(() => import("./pages/Auction.tsx"));
 const AuctionRoom = lazy(() => import("./pages/AuctionRoom.tsx"));
@@ -161,6 +163,7 @@ createRoot(document.getElementById("root")!).render(
           <RouteSyncer />
           <AlertsBoundary>
             <NotificationAlerts />
+            <SoundEngine />
           </AlertsBoundary>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
@@ -174,6 +177,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/teams" element={<Teams />} />
               <Route path="/teams/:id" element={<TeamDetail />} />
+              <Route path="/players/:id" element={<PlayerProfile />} />
               <Route path="/tournaments" element={<Tournaments />} />
               {/* signed-in hub — create + manage your own tournaments */}
               <Route

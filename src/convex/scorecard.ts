@@ -11,12 +11,14 @@ import {
   aggregateBatterStats,
   aggregateBowlerStats,
   aggregateOvers,
+  aggregatePartnerships,
   buildBallSymbol,
   buildCommentary,
   computeMatchResult,
   dlsParScore,
   formatOvers,
   isInningsComplete,
+  isLegalBall,
   isSuperOverComplete,
   matchPrediction,
   matchWinnerTeamId,
@@ -177,6 +179,18 @@ export const get = query({
       });
 
       // ---- bowlers view ---------------------------------------------------
+      // extra per-bowler columns: dot balls, wides and no-balls conceded
+      const bowlerDetail = new Map<string, { dots: number; wides: number; noballs: number }>();
+      for (const d of deliveries) {
+        let e = bowlerDetail.get(d.bowlerId);
+        if (!e) {
+          e = { dots: 0, wides: 0, noballs: 0 };
+          bowlerDetail.set(d.bowlerId, e);
+        }
+        if (isLegalBall(d.extraType) && !d.isWicket && d.totalRuns === 0) e.dots += 1;
+        if (d.extraType === EXTRA_TYPE.WIDE) e.wides += d.extraRuns;
+        if (d.extraType === EXTRA_TYPE.NOBALL) e.noballs += d.extraRuns;
+      }
       const bowlers = [...bowlerAgg.values()]
         .filter((b) => b.balls > 0)
         .sort((a, b) => b.balls - a.balls || b.wickets - a.wickets)
@@ -188,6 +202,9 @@ export const get = query({
           runs: b.runs,
           wickets: b.wickets,
           econ: runRate(b.runs, b.balls),
+          dots: bowlerDetail.get(b.playerId)?.dots ?? 0,
+          wides: bowlerDetail.get(b.playerId)?.wides ?? 0,
+          noballs: bowlerDetail.get(b.playerId)?.noballs ?? 0,
         }));
 
       // ---- recent balls + commentary --------------------------------------
@@ -210,6 +227,70 @@ export const get = query({
           isWicket: d.isWicket,
         };
       });
+
+      // ---- fall of wickets -------------------------------------------------
+      const fow: {
+        score: number;
+        wickets: number;
+        overLabel: string;
+        batterName: string;
+      }[] = [];
+      {
+        let run = 0;
+        let wkts = 0;
+        for (const d of deliveries) {
+          run += d.totalRuns;
+          if (d.isWicket) {
+            wkts += 1;
+            fow.push({
+              score: run,
+              wickets: wkts,
+              overLabel: `${d.overNumber}.${d.ballNumber}`,
+              batterName: d.dismissedBatterId
+                ? playerMap.get(d.dismissedBatterId)?.name ?? "?"
+                : playerMap.get(d.batsmanId)?.name ?? "?",
+            });
+          }
+        }
+      }
+
+      // ---- partnerships ------------------------------------------------------
+      const rawParts = aggregatePartnerships(
+        deliveries,
+        inn.openingStrikerId,
+        inn.openingNonStrikerId,
+      );
+      const partName = (id: string) => playerMap.get(id as Id<"players">)?.name ?? "?";
+      const parts = {
+        list: rawParts.list.map((p) => ({
+          runs: p.runs,
+          balls: p.balls,
+          batters: p.pair.map(partName),
+        })),
+        current: rawParts.current
+          ? {
+              runs: rawParts.current.runs,
+              balls: rawParts.current.balls,
+              batters: rawParts.current.pair.map(partName),
+            }
+          : null,
+        highest: rawParts.highest
+          ? {
+              runs: rawParts.highest.runs,
+              balls: rawParts.highest.balls,
+              batters: rawParts.highest.pair.map(partName),
+            }
+          : null,
+      };
+
+      // ---- wagon wheel source (real shot placements only) --------------------
+      const wagonWheel = deliveries
+        .filter((d) => d.runsScored > 0 && d.shotRegion)
+        .map((d) => ({
+          overLabel: `${d.overNumber}.${d.ballNumber}`,
+          runs: d.runsScored,
+          region: d.shotRegion!,
+        }));
 
       // ---- extras breakdown ------------------------------------------------
       const extras = { total: 0, wide: 0, noball: 0, bye: 0, legbye: 0 };
@@ -249,6 +330,8 @@ export const get = query({
             )
           : null;
 
+      const ballsLeft =
+        inn.target != null ? match.overs * 6 - inn.ballsBowled : null;
       inningsViews.push({
         id: inn._id,
         number: inn.number,
@@ -270,6 +353,11 @@ export const get = query({
         commentary: [...ballViews].reverse(),
         overs: aggregateOvers(deliveries),
         extras,
+        fow,
+        partnerships: parts,
+        wagonWheel,
+        needed: inn.target != null ? Math.max(0, inn.target - inn.totalRuns) : null,
+        ballsLeft,
         isCurrent,
         isComplete,
         crr: runRate(inn.totalRuns, inn.ballsBowled),

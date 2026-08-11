@@ -8,6 +8,8 @@ import { WinPredictor } from "@/components/WinPredictor";
 import { CommentaryFeed } from "@/components/CommentaryFeed";
 import { StreamEmbed } from "@/components/StreamEmbed";
 import { PointsTable } from "@/components/PointsTable";
+import { PlayerLink } from "@/components/PlayerLink";
+import { ManhattanChart, WagonWheel } from "@/components/MatchCharts";
 import { BallChip, MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
 import { formatDate, formatTime, type InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,11 +26,12 @@ import {
 import { motion } from "framer-motion";
 import type { Id } from "@/convex/_generated/dataModel";
 
-type TabKey = "scorecard" | "overs" | "commentary" | "xi" | "points" | "caps";
+type TabKey = "scorecard" | "overs" | "analytics" | "commentary" | "xi" | "points" | "caps";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "scorecard", label: "Scorecard" },
   { key: "overs", label: "Overs" },
+  { key: "analytics", label: "Analytics" },
   { key: "commentary", label: "Commentary" },
   { key: "xi", label: "Playing XI" },
   { key: "points", label: "Points" },
@@ -56,6 +59,12 @@ export default function MatchDetail() {
   const leaderboard = useQuery(
     api.leaderboard.get,
     scorecard ? { tournamentId: scorecard.tournament.id as Id<"tournaments"> } : "skip",
+  );
+  const mvp = useQuery(
+    api.mvp.getMatch,
+    scorecard && scorecard.match.status === "COMPLETED"
+      ? { matchId: scorecard.match.id as Id<"matches"> }
+      : "skip",
   );
 
   if (scorecard === undefined) {
@@ -242,6 +251,9 @@ export default function MatchDetail() {
           {tab === "scorecard" && (
             <div className="grid gap-8 lg:grid-cols-[1.25fr_1fr]">
               <div className="space-y-6">
+                {mvp && mvp.top.length > 0 && (
+                  <PlayerOfTheMatch top={mvp.top} winnerTeamId={mvp.winnerTeamId} />
+                )}
                 <div>
                   <MicroLabel className="mb-2 block">Scorecard</MicroLabel>
                   {innings.length === 0 ? (
@@ -279,6 +291,8 @@ export default function MatchDetail() {
           {tab === "overs" && (
             <OversTab innings={innings} live={live} />
           )}
+
+          {tab === "analytics" && <AnalyticsTab innings={innings} />}
 
           {tab === "commentary" && (
             <div className="mx-auto max-w-2xl">
@@ -425,7 +439,9 @@ function XIPanel({
               {p.jerseyNumber ?? "—"}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-slate-100">{p.name}</span>
+              <PlayerLink id={p._id} name={p.name} className="block truncate text-sm font-bold text-slate-100">
+                {p.name}
+              </PlayerLink>
               <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
                 {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
               </span>
@@ -477,6 +493,153 @@ function FollowMatchButton({
       {isFollowing ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
       {isFollowing ? "Following · alerts on" : "Follow match"}
     </button>
+  );
+}
+
+// ---- player of the match ---------------------------------------------------
+
+function PlayerOfTheMatch({
+  top,
+  winnerTeamId,
+}: {
+  top: {
+    playerId: string;
+    name: string;
+    teamName: string | null;
+    teamShortCode: string | null;
+    teamColor: string | null;
+    runs: number;
+    balls: number;
+    fours: number;
+    sixes: number;
+    sr: number;
+    wickets: number;
+    runsConceded: number;
+    ballsBowled: number;
+    econ: number;
+    catches: number;
+    runOuts: number;
+    score: number;
+  }[];
+  winnerTeamId: string | null;
+}) {
+  const [first, second, third] = top;
+  if (!first) return null;
+  const highlights = [
+    first.runs > 0 && `${first.runs} run${first.runs > 1 ? "s" : ""} (${first.balls} balls)`,
+    first.fours > 0 && `${first.fours} four${first.fours > 1 ? "s" : ""}`,
+    first.sixes > 0 && `${first.sixes} six${first.sixes > 1 ? "es" : ""}`,
+    first.balls > 0 && `SR ${first.sr}`,
+    first.wickets > 0 && `${first.wickets} wicket${first.wickets > 1 ? "s" : ""}`,  
+    first.catches > 0 && `${first.catches} catch${first.catches > 1 ? "es" : ""}`,
+  ].filter(Boolean) as string[];
+
+  return (
+    <div className="border border-[#facc15]/50 bg-gradient-to-br from-[#422006] via-[#0b1524] to-[#0b1524] px-4 py-5 panel-glow">
+      <MicroLabel className="flex items-center gap-1.5 text-[#facc15]">
+        <Trophy className="size-3.5" /> Player of the Match
+      </MicroLabel>
+      <div className="mt-3 flex flex-wrap items-start gap-4">
+        <div className="flex size-14 shrink-0 items-center justify-center bg-[#facc15] text-xl font-black text-[#422006] led-gold">
+          {first.name.slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <PlayerLink id={first.playerId} name={first.name} className="text-lg font-black uppercase tracking-tight text-white">
+            {first.name}
+          </PlayerLink>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            {[first.teamName, first.teamShortCode].filter(Boolean).join(" · ") || "—"}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-slate-200">{highlights.join(" · ")}</p>
+          {second && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              {second.name} {second.runs > 0 ? `${second.runs}${second.runs > 1 ? "" : ""}*` : ""} · {second.wickets} wkt · {second.score} pts
+            </p>
+          )}
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">MVP score</p>
+          <p className="score-nums text-3xl font-black text-[#facc15] led-gold">{first.score}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- analytics tab ----------------------------------------------------------
+
+function AnalyticsTab({ innings }: { innings: InningsView[] }) {
+  if (innings.length === 0) {
+    return (
+      <p className="border border-border bg-card px-4 py-12 text-center text-xs font-bold uppercase tracking-widest text-slate-500">
+        Analytics appear once the match starts
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-8 lg:grid-cols-2">
+      {innings.map((inn) => (
+        <div key={inn.id} className="border border-border bg-card panel-glow">
+          <div className="flex items-center gap-2 border-b border-border bg-[#0b1524] px-3 py-2">
+            <TeamMark shortCode={inn.battingTeam.shortCode} color={inn.battingTeam.color} size="sm" />
+            <span className="text-xs font-extrabold uppercase tracking-wide text-white">
+              {inningsLabel(inn.number)} · {inn.battingTeam.name}
+            </span>
+            <span className="score-nums ml-auto text-sm font-black text-white">
+              {inn.totalRuns}/{inn.wickets}
+            </span>
+          </div>
+          <div className="space-y-5 p-3">
+            <div>
+              <MicroLabel className="mb-1.5 block text-slate-500">Over-by-over (Manhattan)</MicroLabel>
+              <ManhattanChart innings={inn} />
+            </div>
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <MicroLabel className="mb-1.5 block text-slate-500">Wagon wheel · {inn.wagonWheel.length} shots</MicroLabel>
+                <WagonWheel innings={inn} />
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <MicroLabel className="mb-1.5 block text-slate-500">Partnerships</MicroLabel>
+                  <ul className="divide-y divide-border/60 border border-border/60">
+                    {inn.partnerships.list.map((p, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-2 px-3 py-1.5 text-[11px]">
+                        <span className="truncate text-slate-300">{p.batters.filter(Boolean).join(" · ") || "—"}</span>
+                        <span className="score-nums text-xs font-bold text-slate-100">{p.runs} ({p.balls})</span>
+                      </li>
+                    ))}
+                    {inn.partnerships.list.length === 0 && (
+                      <li className="px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        No partnerships yet
+                      </li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <MicroLabel className="mb-1.5 block text-slate-500">Fall of wickets</MicroLabel>
+                  <ul className="divide-y divide-border/60 border border-border/60">
+                    {inn.fow.map((f) => (
+                      <li key={f.wickets} className="flex items-baseline justify-between gap-2 px-3 py-1.5 text-[11px]">
+                        <span className="truncate text-slate-300">{f.batterName}</span>
+                        <span className="score-nums text-xs font-bold text-slate-100">
+                          {f.score}/{f.wickets} <span className="text-[9px] font-medium text-slate-500">({f.overLabel})</span>
+                        </span>
+                      </li>
+                    ))}
+                    {inn.fow.length === 0 && (
+                      <li className="px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        No wickets yet
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

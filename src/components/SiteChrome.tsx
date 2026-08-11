@@ -4,8 +4,10 @@ import { useQuery } from "convex/react";
 import { Link, useNavigate } from "react-router";
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { NotificationBell } from "@/components/NotificationBell";
+import { cn } from "@/lib/utils";
+import { useSoundEnabled } from "@/hooks/use-sound";
 import { formatOvers } from "@/lib/format";
-import { LogIn, Plus } from "lucide-react";
+import { LogIn, Plus, Volume2, VolumeX } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 // ---- live ticker (LED departure-board marquee) -----------------------------
@@ -89,6 +91,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <SoundToggle />
           <NotificationBell />
           {!isLoading &&
             (isAuthenticated ? (
@@ -147,6 +150,27 @@ export function SiteHeader() {
 
       <LiveTicker />
     </header>
+  );
+}
+
+/** Mute/unmute toggle for match sound effects. */
+function SoundToggle() {
+  const { enabled, toggle } = useSoundEnabled();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={enabled ? "Mute match sounds" : "Unmute match sounds"}
+      aria-label={enabled ? "Mute match sounds" : "Unmute match sounds"}
+      className={cn(
+        "inline-flex size-8 items-center justify-center border transition-colors",
+        enabled
+          ? "border-border bg-card text-slate-300 hover:border-[#22c55e] hover:text-[#22c55e]"
+          : "border-border bg-card text-slate-600 hover:border-[#ef4444] hover:text-[#ef4444]",
+      )}
+    >
+      {enabled ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+    </button>
   );
 }
 
