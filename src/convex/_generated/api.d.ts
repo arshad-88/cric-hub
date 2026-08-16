@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as _scratch_seed from "../_scratch_seed.js";
+import type * as _scratch_test from "../_scratch_test.js";
 import type * as admin from "../admin.js";
 import type * as auction from "../auction.js";
 import type * as auth from "../auth.js";
@@ -39,6 +41,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  _scratch_seed: typeof _scratch_seed;
+  _scratch_test: typeof _scratch_test;
   admin: typeof admin;
   auction: typeof auction;
   auth: typeof auth;

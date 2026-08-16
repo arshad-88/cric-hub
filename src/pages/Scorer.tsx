@@ -21,9 +21,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BallChip, MicroLabel } from "@/components/swiss";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatOvers } from "@/lib/format";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  bowlingLabel,
+  useScorePopups,
+  type PopupPlayer,
+  type ScorePopup,
+  type ScorePopupKind,
+} from "@/hooks/use-score-popups";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -116,6 +125,16 @@ export default function Scorer() {
   const [streamOpen, setStreamOpen] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
   const [shotPending, setShotPending] = useState<number | null>(null);
+  const events = useQuery(
+    api.notifications.listForMatch,
+    matchId ? { matchId: matchId as Id<"matches"> } : "skip",
+  );
+  const popups = useScorePopups(
+    scorecard,
+    battingSquad ?? [],
+    bowlingSquad ?? [],
+    events ?? [],
+  );
 
   if (scorecard === undefined) {
     return <ScorerShell><div className="h-10 w-10 animate-spin border-2 border-[#22c55e] border-t-transparent" /></ScorerShell>;
@@ -281,6 +300,7 @@ export default function Scorer() {
 
   return (
     <ScorerShell>
+      <ScorePopupStage popups={popups} />
       {/* header */}
       <div className="flex items-center justify-between gap-3 border-b border-border bg-[#0b1524] px-4 py-3">
         <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
@@ -295,9 +315,12 @@ export default function Scorer() {
             Scorer
           </span>
         </span>
-        <Link to={`/matches/${match.id}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#22c55e] hover:text-white">
-          Public <ArrowLeftRight className="size-3.5" />
-        </Link>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Link to={`/matches/${match.id}`} className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#22c55e] hover:text-white">
+            Public <ArrowLeftRight className="size-3.5" />
+          </Link>
+        </div>
       </div>
 
       {/* score strip */}
@@ -1284,5 +1307,104 @@ function BowlerPicker({
         Set bowler
       </Button>
     </div>
+  );
+}
+
+// ---- live event popups -----------------------------------------------------
+
+const POPUP_TONE: Record<ScorePopupKind, { bar: string; label: string; glow: string }> = {
+  four: { bar: "#22c55e", label: "text-[#22c55e]", glow: "led-green" },
+  six: { bar: "#facc15", label: "text-[#facc15]", glow: "led-gold" },
+  wicket: { bar: "#ef4444", label: "text-[#ef4444]", glow: "led-red" },
+  new_batter: { bar: "#22d3ee", label: "text-[#22d3ee]", glow: "led-cyan" },
+  bowler: { bar: "#22d3ee", label: "text-[#22d3ee]", glow: "led-cyan" },
+  milestone: { bar: "#facc15", label: "text-[#facc15]", glow: "led-gold" },
+  team_milestone: { bar: "#22d3ee", label: "text-[#22d3ee]", glow: "led-cyan" },
+  innings: { bar: "#facc15", label: "text-[#facc15]", glow: "led-gold" },
+  result: { bar: "#22c55e", label: "text-[#22c55e]", glow: "led-green" },
+  superover: { bar: "#a78bfa", label: "text-[#a78bfa]", glow: "" },
+};
+
+function ScorePopupStage({ popups }: { popups: ScorePopup[] }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-3 z-[70] flex flex-col items-center gap-2 px-3">
+      <AnimatePresence>
+        {popups.map((p) => (
+          <motion.div
+            key={p.id}
+            initial={{ opacity: 0, y: -28, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -16, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28 }}
+            className="w-full max-w-md"
+          >
+            <ScorePopupCard popup={p} />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ScorePopupCard({ popup }: { popup: ScorePopup }) {
+  const tone = POPUP_TONE[popup.kind] ?? POPUP_TONE.milestone;
+  return (
+    <div
+      className="overflow-hidden border border-border bg-card shadow-2xl"
+      style={{ animation: "pop-in 0.22s ease-out" }}
+    >
+      <div className="h-1" style={{ backgroundColor: tone.bar }} />
+      <div className="flex items-center gap-3 p-3">
+        {popup.player ? (
+          <PlayerAvatar player={popup.player} color={popup.player.teamColor} />
+        ) : (
+          <span
+            className="flex size-11 shrink-0 items-center justify-center border border-border bg-[#0b1524] text-lg font-black"
+            style={{ color: tone.bar }}
+          >
+            {popup.title.charAt(0)}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className={cn("text-sm font-black uppercase tracking-tight", tone.label, tone.glow)}>
+            {popup.title}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            {popup.message}
+          </p>
+          {popup.player && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {popup.player.role && <ProfileChip label={popup.player.role} />}
+              {popup.player.battingStyle && <ProfileChip label={popup.player.battingStyle} />}
+              {bowlingLabel(popup.player.bowlingStyle) && (
+                <ProfileChip label={bowlingLabel(popup.player.bowlingStyle)!} />
+              )}
+              {popup.player.jerseyNumber != null && popup.player.jerseyNumber > 0 && (
+                <ProfileChip label={`#${popup.player.jerseyNumber}`} />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlayerAvatar({ player, color }: { player: PopupPlayer; color?: string }) {
+  return (
+    <span
+      className="popup-avatar relative flex size-11 shrink-0 items-center justify-center rounded-full border-2 text-base font-black text-white"
+      style={{ backgroundColor: color ?? "#334155", borderColor: color ?? "#334155" }}
+    >
+      {player.name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+function ProfileChip({ label }: { label: string }) {
+  return (
+    <span className="border border-border bg-[#0b1524] px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-slate-300">
+      {label}
+    </span>
   );
 }

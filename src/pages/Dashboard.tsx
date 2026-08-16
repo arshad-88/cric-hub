@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -159,6 +160,7 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <span className="micro-label hidden max-w-48 truncate text-slate-500 md:inline">
               {user?.name ?? "Signed in"} · {user?.phone ?? ""}
             </span>

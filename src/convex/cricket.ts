@@ -446,7 +446,16 @@ export function replayCrease(
       striker = nonStriker;
       nonStriker = t;
     }
-    if (d.isWicket) striker = d.newBatsmanId ?? striker;
+    if (d.isWicket && d.newBatsmanId) {
+      // The replacement batter takes the crease of the DISMISSED batter. For
+      // a run-out of the non-striker the striker keeps strike — putting the
+      // new batter straight into the striker slot would rotate the wrong way.
+      if (d.dismissedBatterId && nonStriker && d.dismissedBatterId === nonStriker) {
+        nonStriker = d.newBatsmanId;
+      } else {
+        striker = d.newBatsmanId;
+      }
+    }
     const rotateBy =
       d.runsScored +
       (d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE

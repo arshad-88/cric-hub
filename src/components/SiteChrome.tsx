@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import { Link, useNavigate } from "react-router";
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { NotificationBell } from "@/components/NotificationBell";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { useSoundEnabled } from "@/hooks/use-sound";
 import { formatOvers } from "@/lib/format";
@@ -91,6 +92,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <SoundToggle />
           <NotificationBell />
           {!isLoading &&

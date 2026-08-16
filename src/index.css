@@ -117,6 +117,132 @@
   --sidebar-ring: #22c55e;
 }
 
+/* ============================================================
+   LIGHT THEME — the same broadcast design on paper.
+   The `.light` class is applied to <html> by the theme toggle
+   (dark stays the default). Pages/cards/inputs flip through
+   the CSS variables; the deep-navy broadcast panels stay dark
+   as intentional accents and keep their light text via the
+   guards below.
+   ============================================================ */
+.light {
+  color-scheme: light;
+  --background: #e9eef5;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #16a34a;
+  --primary-foreground: #ffffff;
+  --secondary: #cbd5e1;
+  --secondary-foreground: #0f172a;
+  --muted: #e2e8f0;
+  --muted-foreground: #475569;
+  --accent: #ca8a04;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --border: #cbd5e1;
+  --input: #94a3b8;
+  --ring: #16a34a;
+  --chart-1: #16a34a;
+  --chart-2: #ca8a04;
+  --chart-3: #0891b2;
+  --chart-4: #dc2626;
+  --chart-5: #7c3aed;
+  --sidebar: #0f172a;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-primary: #16a34a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: #334155;
+  --sidebar-ring: #16a34a;
+}
+
+/* light text written for dark surfaces → dark ink on light paper */
+.light .text-white { color: #0f172a; }
+.light .text-slate-100 { color: #0f172a; }
+.light .text-slate-200 { color: #1e293b; }
+.light .text-slate-300 { color: #334155; }
+.light .text-slate-400 { color: #475569; }
+
+/* destructive red surfaces keep white labels; translucent red tints keep
+   red text (badges like bg-[#ef4444]/10) instead of being forced white */
+.light [class~="bg-[#ef4444]"] { color: #ffffff; }
+.light [class*="bg-[#dc2626"] { color: #ffffff; }
+.light [class*="bg-[#7f1d1d"] { color: #ffffff; }
+.light [class*="bg-[#ef4444]/"] { color: #dc2626; }
+.light [class~="bg-[#ef4444]"] .text-white,
+.light [class*="bg-[#dc2626"] .text-white,
+.light [class*="bg-[#7f1d1d"] .text-white { color: #ffffff; }
+.light [class*="bg-[#ef4444]/"] .text-white { color: #dc2626; }
+.light [class~="bg-[#ef4444]"] .text-slate-100,
+.light [class*="bg-[#dc2626"] .text-slate-100,
+.light [class*="bg-[#7f1d1d"] .text-slate-100 { color: #ffffff; }
+
+/* deep-navy broadcast panels keep their light text (same-element) */
+.light [class*="bg-[#0b1524"] { color: #f8fafc; }
+.light [class*="bg-[#052e16"] { color: #f8fafc; }
+.light [class*="bg-[#422006"] { color: #f8fafc; }
+.light [class*="bg-[#083344"] { color: #f8fafc; }
+.light [class*="bg-[#450a0a"] { color: #f8fafc; }
+.light [class*="bg-[#0f172a"] { color: #f8fafc; }
+/* …and as descendants of those panels */
+.light [class*="bg-[#0b1524"] .text-white,
+.light [class*="bg-[#052e16"] .text-white,
+.light [class*="bg-[#422006"] .text-white,
+.light [class*="bg-[#083344"] .text-white,
+.light [class*="bg-[#450a0a"] .text-white,
+.light [class*="bg-[#0f172a"] .text-white { color: #f8fafc; }
+.light [class*="bg-[#0b1524"] .text-slate-100,
+.light [class*="bg-[#052e16"] .text-slate-100,
+.light [class*="bg-[#422006"] .text-slate-100,
+.light [class*="bg-[#083344"] .text-slate-100,
+.light [class*="bg-[#450a0a"] .text-slate-100,
+.light [class*="bg-[#0f172a"] .text-slate-100 { color: #f8fafc; }
+.light [class*="bg-[#0b1524"] .text-slate-200,
+.light [class*="bg-[#052e16"] .text-slate-200,
+.light [class*="bg-[#422006"] .text-slate-200,
+.light [class*="bg-[#083344"] .text-slate-200,
+.light [class*="bg-[#450a0a"] .text-slate-200,
+.light [class*="bg-[#0f172a"] .text-slate-200 { color: #f8fafc; }
+.light [class*="bg-[#0b1524"] .text-slate-300,
+.light [class*="bg-[#052e16"] .text-slate-300,
+.light [class*="bg-[#422006"] .text-slate-300,
+.light [class*="bg-[#083344"] .text-slate-300,
+.light [class*="bg-[#450a0a"] .text-slate-300,
+.light [class*="bg-[#0f172a"] .text-slate-300 { color: #f8fafc; }
+.light [class*="bg-[#0b1524"] .text-slate-400,
+.light [class*="bg-[#052e16"] .text-slate-400,
+.light [class*="bg-[#422006"] .text-slate-400,
+.light [class*="bg-[#083344"] .text-slate-400,
+.light [class*="bg-[#450a0a"] .text-slate-400,
+.light [class*="bg-[#0f172a"] .text-slate-400 { color: #cbd5e1; }
+.light [class*="bg-[#0b1524"] .text-slate-500,
+.light [class*="bg-[#052e16"] .text-slate-500,
+.light [class*="bg-[#422006"] .text-slate-500,
+.light [class*="bg-[#083344"] .text-slate-500,
+.light [class*="bg-[#450a0a"] .text-slate-500,
+.light [class*="bg-[#0f172a"] .text-slate-500 { color: #94a3b8; }
+
+/* the dark landing hero keeps its broadcast look */
+.light .stadium-gradient { color: #f8fafc; }
+.light .stadium-gradient .text-white,
+.light .stadium-gradient .text-slate-100,
+.light .stadium-gradient .text-slate-200,
+.light .stadium-gradient .text-slate-300 { color: #f8fafc; }
+.light .stadium-gradient .text-slate-400 { color: #cbd5e1; }
+.light .stadium-gradient .text-slate-500 { color: #94a3b8; }
+
+/* popup avatars sit on saturated team colours — keep their initials white */
+.light .popup-avatar { color: #ffffff !important; }
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.92) translateY(-6px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @theme {
   --font-sans: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;

@@ -225,6 +225,14 @@ export const get = query({
           kind: sym.kind,
           text,
           isWicket: d.isWicket,
+          // extra fields so the scorer's live popups can show who did what
+          batsmanId: d.batsmanId,
+          batsmanName: playerMap.get(d.batsmanId)?.name ?? "?",
+          runsScored: d.runsScored,
+          extraType: d.extraType,
+          dismissedBatterId: d.dismissedBatterId,
+          newBatsmanId: d.newBatsmanId,
+          wicketType: d.wicketType,
         };
       });
 
