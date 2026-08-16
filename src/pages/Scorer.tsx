@@ -1327,14 +1327,14 @@ const POPUP_TONE: Record<ScorePopupKind, { bar: string; label: string; glow: str
 
 function ScorePopupStage({ popups }: { popups: ScorePopup[] }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-3 z-[70] flex flex-col items-center gap-2 px-3">
+    <div className="pointer-events-none fixed inset-0 z-[70] flex flex-col items-center justify-center gap-2 px-4">
       <AnimatePresence>
         {popups.map((p) => (
           <motion.div
             key={p.id}
-            initial={{ opacity: 0, y: -28, scale: 0.94 }}
+            initial={{ opacity: 0, y: -14, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -16, scale: 0.96 }}
+            exit={{ opacity: 0, y: 0, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 380, damping: 28 }}
             className="w-full max-w-md"
           >

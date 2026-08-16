@@ -67,7 +67,7 @@ export function SiteHeader() {
   const navigate = useNavigate();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-[#0b1524]/95 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-panel/95 backdrop-blur">
       <div className="h-0.5 bg-gradient-to-r from-[#22c55e] via-[#facc15] to-[#22d3ee]" aria-hidden />
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
         <Link to="/" className="group flex items-center gap-2.5">
@@ -180,7 +180,7 @@ function SoundToggle() {
 
 export function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-border bg-[#0b1524]">
+    <footer className="mt-16 border-t border-border bg-panel">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:grid-cols-3">
         <div>
           <div className="flex items-center gap-2">

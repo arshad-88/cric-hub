@@ -252,14 +252,32 @@
 .light [class*="bg-[#450a0a"] .text-slate-500,
 .light [class*="bg-[#0f172a"] .text-slate-500 { color: #94a3b8; }
 
-/* the dark landing hero keeps its broadcast look */
-.light .stadium-gradient { color: #f8fafc; }
+/* the landing hero flips to paper in light mode (dark broadcast in dark mode) */
+.light .stadium-gradient {
+  color: #0f172a;
+  background:
+    radial-gradient(120% 140% at 85% -20%, rgba(8, 145, 178, 0.16) 0%, transparent 45%),
+    radial-gradient(120% 160% at 10% 110%, rgba(22, 163, 74, 0.14) 0%, transparent 50%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 60%, #dbe4ee 100%);
+}
 .light .stadium-gradient .text-white,
 .light .stadium-gradient .text-slate-100,
-.light .stadium-gradient .text-slate-200,
-.light .stadium-gradient .text-slate-300 { color: #f8fafc; }
-.light .stadium-gradient .text-slate-400 { color: #cbd5e1; }
-.light .stadium-gradient .text-slate-500 { color: #94a3b8; }
+.light .stadium-gradient .text-slate-200 { color: #0f172a; }
+.light .stadium-gradient .text-slate-300 { color: #334155; }
+.light .stadium-gradient .text-slate-400 { color: #475569; }
+.light .stadium-gradient .text-slate-500 { color: #64748b; }
+
+/* hover links written for dark surfaces need dark ink on light paper */
+.light .hover\:text-white:hover { color: #0f172a; }
+.light .hover\:text-slate-100:hover { color: #0f172a; }
+.light .hover\:text-slate-200:hover { color: #1e293b; }
+.light .hover\:text-slate-300:hover { color: #334155; }
+.light .hover\:text-slate-400:hover { color: #475569; }
+
+/* true-black surfaces (stream button) keep their white label */
+.light [class~="bg-black"] { color: #ffffff; }
+.light [class~="bg-black"] .text-white { color: #ffffff; }
+.light [class~="bg-black"] .hover\:text-black:hover { color: #0f172a; }
 
 /* popup avatars sit on saturated team colours — keep their initials white */
 .light .popup-avatar { color: #ffffff !important; }
