@@ -73,7 +73,7 @@ export default function PlayerProfile() {
 
         {/* header */}
         <div className="mt-6 flex flex-wrap items-center gap-4 border border-border bg-card px-5 py-6 panel-glow">
-          <span className="flex size-16 items-center justify-center border border-border bg-[#0b1524] text-[#22c55e]">
+          <span className="flex size-16 items-center justify-center border border-border bg-panel text-[#22c55e]">
             <UserRound className="size-8" />
           </span>
           <div className="min-w-0 flex-1">
@@ -169,7 +169,7 @@ export default function PlayerProfile() {
 
           {/* form chart */}
           <div className="border border-border bg-card panel-glow">
-            <div className="border-b border-border bg-[#0b1524] px-3 py-2">
+            <div className="border-b border-border bg-panel px-3 py-2">
               <MicroLabel>Recent form · runs &amp; wickets per match</MicroLabel>
             </div>
             <div className="h-52 px-2 py-3">
@@ -200,7 +200,7 @@ export default function PlayerProfile() {
         <div className="mt-4 overflow-x-auto border border-border bg-card panel-glow">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-border bg-[#0b1524] text-[9px] font-bold uppercase tracking-widest text-slate-500">
+              <tr className="border-b border-border bg-panel text-[9px] font-bold uppercase tracking-widest text-slate-500">
                 <th className="px-3 py-2">Match</th>
                 <th className="px-3 py-2">R</th>
                 <th className="px-3 py-2">B</th>
@@ -260,7 +260,7 @@ export default function PlayerProfile() {
             <div className="mt-4 overflow-x-auto border border-border bg-card panel-glow">
               <table className="w-full min-w-[480px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-[#0b1524] text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                  <tr className="border-b border-border bg-panel text-[9px] font-bold uppercase tracking-widest text-slate-500">
                     <th className="px-3 py-2">Room</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Team</th>

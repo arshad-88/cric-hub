@@ -103,7 +103,7 @@ export function WinPredictor({
       </div>
 
       {/* probability bar */}
-      <div className="mt-3 flex h-2.5 w-full overflow-hidden border border-border bg-[#0b1524]">
+      <div className="mt-3 flex h-2.5 w-full overflow-hidden border border-border bg-panel">
         <motion.div
           className="h-full bg-[#22c55e]"
           initial={false}

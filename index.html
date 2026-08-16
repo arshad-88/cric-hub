@@ -8,6 +8,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CricPulse — Live Community Cricket</title>
   <meta name="description" content="Real-time cricket scores, ball-by-ball commentary, points tables, caps and live YouTube/Twitch streams for every league." />
+  <script>
+    // Apply the saved theme before first paint so there is no flash and the
+    // first render already uses the right colors. Kept in sync with the
+    // localStorage key used by src/hooks/use-theme.ts.
+    (function () {
+      try {
+        var t = window.localStorage.getItem("cricpulse-theme");
+        document.documentElement.classList.add(t === "light" ? "light" : "dark");
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
+    })();
+  </script>
 </head>
 
 

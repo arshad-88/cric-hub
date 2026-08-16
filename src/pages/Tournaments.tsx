@@ -100,7 +100,7 @@ function TournamentCardRow({
     >
       {/* banner */}
       <div
-        className="relative flex h-28 items-end overflow-hidden border-b border-border bg-[#0b1524] p-3"
+        className="relative flex h-28 items-end overflow-hidden border-b border-border bg-panel p-3"
         style={
           data.bannerUrl
             ? {

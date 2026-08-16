@@ -12,7 +12,7 @@ export function PointsTable({ rows }: { rows: PointsRow[] }) {
   }
   return (
     <div className="border border-border bg-card panel-glow">
-      <div className="grid grid-cols-[1fr_repeat(6,minmax(0,auto))] items-center gap-x-3 border-b border-border bg-[#0b1524] px-3 py-2">
+      <div className="grid grid-cols-[1fr_repeat(6,minmax(0,auto))] items-center gap-x-3 border-b border-border bg-panel px-3 py-2">
         <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Team</span>
         {["P", "W", "L", "T", "NRR", "Pts"].map((h) => (
           <span

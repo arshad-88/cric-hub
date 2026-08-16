@@ -302,7 +302,7 @@ export default function Scorer() {
     <ScorerShell>
       <ScorePopupStage popups={popups} />
       {/* header */}
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-[#0b1524] px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-panel px-4 py-3">
         <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white">
           <ArrowLeft className="size-3.5" /> My Hub
         </Link>
@@ -468,7 +468,7 @@ export default function Scorer() {
                     "score-nums py-5 text-2xl font-extrabold transition-transform active:scale-95",
                     r === 4 || r === 6
                       ? "bg-[#22c55e] text-[#052e16] glow-green hover:bg-[#4ade80]"
-                      : "bg-[#0b1524] text-white hover:bg-slate-800",
+                      : "bg-panel text-white hover:bg-panel-2",
                   )}
                 >
                   {r}
@@ -704,7 +704,7 @@ export default function Scorer() {
               </DialogDescription>
             </DialogHeader>
             <Input
-              className="rounded-none border-border bg-[#0b1524] text-slate-200"
+              className="rounded-none border-border bg-panel text-slate-200"
               value={streamUrl}
               onChange={(e) => setStreamUrl(e.target.value)}
               placeholder="https://www.youtube.com/watch?v=…"
@@ -975,7 +975,7 @@ function Picker({
     <div>
       <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{label}</Label>
       <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger className="mt-1 h-10 rounded-none border-border bg-[#0b1524] text-xs text-slate-200">
+        <SelectTrigger className="mt-1 h-10 rounded-none border-border bg-panel text-xs text-slate-200">
           <SelectValue placeholder="Choose…" />
         </SelectTrigger>
         <SelectContent className="rounded-none border-border bg-card">
@@ -1229,7 +1229,7 @@ function ShotDialog({
                     "border px-1.5 py-2 text-[10px] font-extrabold uppercase tracking-wide transition-colors",
                     shotType === s
                       ? "border-[#22c55e] bg-[#22c55e]/15 text-[#22c55e]"
-                      : "border-border bg-[#0b1524] text-slate-300 hover:border-slate-600",
+                      : "border-border bg-panel text-slate-300 hover:border-slate-600",
                   )}
                 >
                   {s}
@@ -1252,7 +1252,7 @@ function ShotDialog({
                     "border px-1.5 py-2 text-[9px] font-bold uppercase tracking-wide transition-colors",
                     shotRegion === r
                       ? "border-[#22d3ee] bg-[#22d3ee]/15 text-[#22d3ee]"
-                      : "border-border bg-[#0b1524] text-slate-400 hover:border-slate-600",
+                      : "border-border bg-panel text-slate-400 hover:border-slate-600",
                   )}
                 >
                   {r}
@@ -1359,7 +1359,7 @@ function ScorePopupCard({ popup }: { popup: ScorePopup }) {
           <PlayerAvatar player={popup.player} color={popup.player.teamColor} />
         ) : (
           <span
-            className="flex size-11 shrink-0 items-center justify-center border border-border bg-[#0b1524] text-lg font-black"
+            className="flex size-11 shrink-0 items-center justify-center border border-border bg-panel text-lg font-black"
             style={{ color: tone.bar }}
           >
             {popup.title.charAt(0)}
@@ -1403,7 +1403,7 @@ function PlayerAvatar({ player, color }: { player: PopupPlayer; color?: string }
 
 function ProfileChip({ label }: { label: string }) {
   return (
-    <span className="border border-border bg-[#0b1524] px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-slate-300">
+    <span className="border border-border bg-panel px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-slate-300">
       {label}
     </span>
   );

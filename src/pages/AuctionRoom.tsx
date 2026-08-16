@@ -170,7 +170,7 @@ function StatBar({ label, value }: { label: string; value: number }) {
       <span className="w-14 shrink-0 text-[9px] font-bold uppercase tracking-widest text-slate-500">
         {label}
       </span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#0b1524]">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel">
         <div
           className="h-full bg-gradient-to-r from-[#facc15] to-[#22c55e]"
           style={{ width: `${Math.min(100, value)}%` }}
@@ -495,7 +495,7 @@ function JoinPanel({ auctionId }: { auctionId: Id<"auctions"> }) {
           Your team name
         </Label>
         <Input
-          className="mt-1 h-10 rounded-none border-border bg-[#0b1524] text-xs text-slate-200"
+          className="mt-1 h-10 rounded-none border-border bg-panel text-xs text-slate-200"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="My XI"
@@ -711,7 +711,7 @@ function LiveBlock({
               textClass="text-5xl"
             />
             {current.teamShort && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-[#0b1524] px-2 py-0.5 text-[10px] font-black tracking-widest text-[#facc15] ring-1 ring-[#facc15]/40">
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-panel px-2 py-0.5 text-[10px] font-black tracking-widest text-[#facc15] ring-1 ring-[#facc15]/40">
                 {current.teamShort}
               </span>
             )}
@@ -790,7 +790,7 @@ function LiveBlock({
                       type="button"
                       disabled={a > myPurse}
                       onClick={() => doBid(a)}
-                      className="border border-border bg-[#0b1524] py-3 text-xs font-black uppercase tracking-widest text-slate-200 transition-colors hover:border-[#22c55e] hover:bg-[#22c55e] hover:text-[#052e16] disabled:opacity-40"
+                      className="border border-border bg-panel py-3 text-xs font-black uppercase tracking-widest text-slate-200 transition-colors hover:border-[#22c55e] hover:bg-[#22c55e] hover:text-[#052e16] disabled:opacity-40"
                     >
                       Bid {inr(a)}
                     </button>
@@ -803,11 +803,11 @@ function LiveBlock({
               </div>
             </div>
           ) : myTeam ? (
-            <p className="border border-border bg-[#0b1524] px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <p className="border border-border bg-panel px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
               A player will be called any second…
             </p>
           ) : (
-            <p className="border border-border bg-[#0b1524] px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <p className="border border-border bg-panel px-3 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Join the room above to start bidding
             </p>
           )}
@@ -1014,7 +1014,7 @@ function TeamsSquadsBoard({ room }: { room: RoomView }) {
                 </p>
               </div>
 
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#0b1524]">
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-panel">
                 <div
                   className="h-full bg-gradient-to-r from-[#22c55e] to-[#22d3ee] transition-all"
                   style={{ width: `${Math.min(100, pct)}%` }}

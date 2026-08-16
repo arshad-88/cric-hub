@@ -366,7 +366,7 @@ function OversTab({ innings, live }: { innings: InningsView[]; live: boolean }) 
           <div
             className={cn(
               "flex items-center justify-between border-b border-border px-3 py-2",
-              live && inn.isCurrent ? "bg-[#052e16]" : "bg-[#0b1524]",
+              live && inn.isCurrent ? "bg-[#052e16]" : "bg-panel",
             )}
           >
             <span className="flex items-center gap-2">
@@ -425,7 +425,7 @@ function XIPanel({
 }) {
   return (
     <div className="border border-border bg-card panel-glow">
-      <div className="flex items-center gap-2.5 border-b border-border bg-[#0b1524] px-3 py-2.5">
+      <div className="flex items-center gap-2.5 border-b border-border bg-panel px-3 py-2.5">
         <TeamMark shortCode={shortCode} color={color} size="sm" />
         <span className="truncate text-sm font-extrabold uppercase tracking-tight text-white">
           {name}
@@ -580,7 +580,7 @@ function AnalyticsTab({ innings }: { innings: InningsView[] }) {
     <div className="grid gap-8 lg:grid-cols-2">
       {innings.map((inn) => (
         <div key={inn.id} className="border border-border bg-card panel-glow">
-          <div className="flex items-center gap-2 border-b border-border bg-[#0b1524] px-3 py-2">
+          <div className="flex items-center gap-2 border-b border-border bg-panel px-3 py-2">
             <TeamMark shortCode={inn.battingTeam.shortCode} color={inn.battingTeam.color} size="sm" />
             <span className="text-xs font-extrabold uppercase tracking-wide text-white">
               {inningsLabel(inn.number)} · {inn.battingTeam.name}

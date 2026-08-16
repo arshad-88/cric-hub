@@ -215,7 +215,7 @@ export function InningsPanel({
           "flex items-center gap-3 border-b border-border px-3 py-2.5",
           active
             ? "bg-gradient-to-r from-[#052e16] to-[#0f3d1f]"
-            : "bg-[#0b1524]",
+            : "bg-panel",
         )}
       >
         <TeamMark shortCode={innings.battingTeam.shortCode} color={innings.battingTeam.color} />

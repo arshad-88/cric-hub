@@ -97,7 +97,7 @@ export default function Auction() {
                 key={r.id}
                 type="button"
                 onClick={() => navigate(`/auction/${r.id}`)}
-                className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#0b1524]/60"
+                className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-panel/60"
               >
                 <span
                   className={cn(
@@ -372,4 +372,4 @@ function Field({
 }
 
 const inputCls =
-  "h-10 rounded-none border-border bg-[#0b1524] text-xs text-slate-200 placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30";
+  "h-10 rounded-none border-border bg-panel text-xs text-slate-200 placeholder:text-slate-600 focus-visible:border-[#22c55e] focus-visible:ring-[#22c55e]/30";

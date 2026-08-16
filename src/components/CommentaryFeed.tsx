@@ -15,7 +15,7 @@ export function CommentaryFeed({ balls }: { balls: BallView[] }) {
   }
   return (
     <div className="border border-border bg-card panel-glow">
-      <div className="flex items-center justify-between border-b border-border bg-[#0b1524] px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border bg-panel px-3 py-2">
         <MicroLabel className="text-[#22c55e]">Ball-by-ball</MicroLabel>
         <MicroLabel className="text-slate-500">{balls.length} balls</MicroLabel>
       </div>

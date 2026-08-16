@@ -115,7 +115,7 @@ export default function Landing() {
 
       {/* ================= LIVE MATCH CENTER ================= */}
       {live && (
-        <section className="border-b border-border bg-[#0b1524]/60">
+        <section className="border-b border-border bg-panel/60">
           <div className="mx-auto max-w-7xl px-4 py-12">
             <SectionHeading index="01" title="Match center — live" className="mb-6" />
             <div className="grid gap-6 lg:grid-cols-2">
@@ -160,7 +160,7 @@ export default function Landing() {
               },
             ].map((f) => (
               <div key={f.title} className="bg-card px-5 py-6 panel-glow">
-                <span className="flex size-10 items-center justify-center border border-border bg-[#0b1524] text-[#22c55e]">
+                <span className="flex size-10 items-center justify-center border border-border bg-panel text-[#22c55e]">
                   {f.icon}
                 </span>
                 <h3 className="mt-4 text-sm font-extrabold uppercase tracking-tight text-white">
@@ -328,7 +328,7 @@ export default function Landing() {
                   "Check points tables, caps and past results",
                 ].map((s, i) => (
                   <li key={s} className="flex items-start gap-3 text-xs leading-relaxed text-slate-400">
-                    <span className="score-nums flex size-5 shrink-0 items-center justify-center border border-border bg-[#0b1524] text-[10px] font-extrabold text-[#22d3ee]">
+                    <span className="score-nums flex size-5 shrink-0 items-center justify-center border border-border bg-panel text-[10px] font-extrabold text-[#22d3ee]">
                       {i + 1}
                     </span>
                     {s}
@@ -349,7 +349,7 @@ export default function Landing() {
                   "Stream link, undo, overs — all from the pitch side",
                 ].map((s, i) => (
                   <li key={s} className="flex items-start gap-3 text-xs leading-relaxed text-slate-400">
-                    <span className="score-nums flex size-5 shrink-0 items-center justify-center border border-border bg-[#0b1524] text-[10px] font-extrabold text-[#22c55e]">
+                    <span className="score-nums flex size-5 shrink-0 items-center justify-center border border-border bg-panel text-[10px] font-extrabold text-[#22c55e]">
                       {i + 1}
                     </span>
                     {s}
