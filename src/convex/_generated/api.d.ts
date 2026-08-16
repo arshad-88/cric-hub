@@ -28,6 +28,7 @@ import type * as scheduler from "../scheduler.js";
 import type * as scorecard from "../scorecard.js";
 import type * as scoring from "../scoring.js";
 import type * as seed from "../seed.js";
+import type * as simulate from "../simulate.js";
 import type * as teams from "../teams.js";
 import type * as tournaments from "../tournaments.js";
 import type * as users from "../users.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   scorecard: typeof scorecard;
   scoring: typeof scoring;
   seed: typeof seed;
+  simulate: typeof simulate;
   teams: typeof teams;
   tournaments: typeof tournaments;
   users: typeof users;

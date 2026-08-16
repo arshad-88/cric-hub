@@ -6,8 +6,11 @@
 //   • NO BALL   — a delivery recorded as a no-ball (symbol starts with "Nb")
 //   • FREE HIT  — the legal ball immediately after a no-ball
 //
-// A single engine instance plays one siren at a time so rapid events never
-// overlap: each new siren cuts the last. Mute state persists in localStorage.
+// The AudioContext is primed on the first user gesture (click/tap/keypress)
+// because browsers suspend audio until the page has been interacted with —
+// without that, the siren would silently never play. A single engine instance
+// plays one siren at a time so rapid events never overlap: each new siren
+// cuts the last. Mute state persists in localStorage.
 // ---------------------------------------------------------------------------
 
 import { api } from "@/convex/_generated/api";
@@ -49,12 +52,36 @@ function audio(): AudioContext | null {
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       audioCtx = ctx;
     }
-    if (audioCtx.state === "suspended") void audioCtx.resume();
+    // Chrome/Safari keep the context suspended until a user gesture; the
+    // gesture listener below calls resume() inside a click, which is allowed.
+    if (audioCtx.state === "suspended") {
+      void audioCtx.resume().catch(() => {});
+    }
     return audioCtx;
   } catch {
     return null;
   }
 }
+
+let primed = false;
+
+/** Unlock audio inside the first user gesture (autoplay policy workaround). */
+function primeOnGesture(): void {
+  if (primed) return;
+  primed = true;
+  const unlock = () => {
+    // Creating/resuming inside a gesture marks the context as allowed.
+    const a = audio();
+    if (a && a.state === "suspended") {
+      void a.resume().catch(() => {});
+    }
+  };
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("keydown", unlock, { passive: true });
+  window.addEventListener("touchstart", unlock, { passive: true });
+}
+
+if (typeof window !== "undefined") primeOnGesture();
 
 const active: AudioScheduledSourceNode[] = [];
 
@@ -138,16 +165,27 @@ function tone(
   track(osc);
 }
 
-/** IPL-style two-tone no-ball siren with a murmur bed. */
+/**
+ * The real IPL no-ball siren is a two-tone wail — two notes a fifth apart
+ * alternating with a hard attack (like an air-horn siren). We layer the two
+ * alternating square tones over a sine sub-octave for body and the noise bed
+ * for air, so it reads as a stadium horn rather than a phone ringtone.
+ */
 function siren(ctx: AudioContext, dur: number, peak: number): void {
   if (!master) return;
   const t0 = ctx.currentTime;
-  noiseBed(ctx, master, t0, dur, peak * 0.3, 700, "bandpass");
-  const cycles = Math.max(2, Math.floor(dur / 0.42));
+  noiseBed(ctx, master, t0, dur, peak * 0.25, 900, "bandpass");
+  const hi = 830; // ~G#5
+  const lo = 622; // ~D#5 (fifth below — the classic siren interval)
+  const toneDur = 0.42;
+  const cycles = Math.max(3, Math.floor(dur / toneDur));
   for (let i = 0; i < cycles; i++) {
-    const t = t0 + i * 0.42;
-    const hi = i % 2 === 0;
-    tone(ctx, master, t, hi ? 880 : 659, 0.38, peak * (hi ? 0.85 : 0.7));
+    const t = t0 + i * toneDur;
+    const isHi = i % 2 === 0;
+    const f = isHi ? hi : lo;
+    tone(ctx, master, t, f, toneDur * 0.92, peak * (isHi ? 0.8 : 0.68));
+    // Sub-octave sine gives the horn its chest; same note, one octave down.
+    tone(ctx, master, t, f / 2, toneDur * 0.92, peak * 0.3, "sine");
   }
 }
 
@@ -157,7 +195,7 @@ export function playNoBallSiren(enabled = true): void {
   const a = audio();
   if (!a || !master) return;
   cutPrevious();
-  siren(a, 2.0, 0.95);
+  siren(a, 2.1, 0.95);
 }
 
 const STORAGE_KEY = "crikhub.sound.enabled";
@@ -179,6 +217,8 @@ export function useSoundEnabled(): { enabled: boolean; toggle: () => void } {
       } catch {
         // storage unavailable — keep in-memory state
       }
+      // Unlocking inside the click handler also satisfies autoplay policy.
+      if (nv) audio();
       return nv;
     });
   }, []);
@@ -190,22 +230,23 @@ function isNoBallSymbol(symbol: string): boolean {
   return symbol.toUpperCase().startsWith("NB");
 }
 
-/**
- * App-wide siren watcher: plays the no-ball siren for NO BALL and FREE HIT
- * balls from the live match's newest deliveries. Mounted once at the root —
- * always returns null (renders nothing).
- */
-export function SoundEngine(): null {
-  const { enabled } = useSoundEnabled();
+const MAX_WATCHED = 3;
 
-  // new ball events (wickets / milestones) never trigger a sound any more —
-  // only the no-ball siren below.
-  const liveMatches = useQuery(api.matches.list, { status: "LIVE" });
+/**
+ * Watches ONE live match's newest deliveries and fires the siren on NO BALL
+ * / FREE HIT. Owns its own last-ball ref so revisiting a page never replays
+ * the whole match's history.
+ */
+function MatchSoundWatch({
+  matchId,
+  enabled,
+}: {
+  matchId: Id<"matches"> | undefined;
+  enabled: boolean;
+}): null {
   const scorecard = useQuery(
     api.scorecard.get,
-    liveMatches?.[0]
-      ? { matchId: liveMatches[0].id as Id<"matches"> }
-      : "skip",
+    matchId ? { matchId } : "skip",
   );
   const lastBall = useRef<string | null>(null);
   useEffect(() => {
@@ -213,6 +254,7 @@ export function SoundEngine(): null {
     const newest = balls[0];
     if (!newest) return;
     if (lastBall.current === null) {
+      // First observation — seed without playing.
       lastBall.current = newest.key;
       return;
     }
@@ -233,4 +275,27 @@ export function SoundEngine(): null {
   }, [scorecard, enabled]);
 
   return null;
+}
+
+/**
+ * App-wide siren watcher: plays the no-ball siren for NO BALL and FREE HIT
+ * balls from every live match's newest deliveries. Mounted once at the root —
+ * always returns null (renders nothing).
+ */
+export function SoundEngine() {
+  const { enabled } = useSoundEnabled();
+  const liveMatches = useQuery(api.matches.list, { status: "LIVE" });
+  const live = (liveMatches ?? []).slice(0, MAX_WATCHED);
+
+  return (
+    <>
+      {live.map((m) => (
+        <MatchSoundWatch
+          key={m.id}
+          matchId={m.id as Id<"matches">}
+          enabled={enabled}
+        />
+      ))}
+    </>
+  );
 }

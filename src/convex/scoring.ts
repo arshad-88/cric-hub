@@ -4,7 +4,7 @@
 // Convex's reactive query subscriptions.
 // ---------------------------------------------------------------------------
 
-import { mutation } from "./_generated/server";
+import { internalMutation, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -30,6 +30,7 @@ import {
 } from "./cricket";
 import type { DeliveryLike } from "./cricket";
 import { EXTRA_TYPE, extraTypeValidator, wicketTypeValidator } from "./schema";
+import type { ExtraType, WicketType } from "./schema";
 import type { MutationCtx } from "./_generated/server";
 
 async function getDeliveries(
@@ -89,23 +90,96 @@ async function assertPlayerInTeam(
   return p;
 }
 
+// ---------------------------------------------------------------------------
+// Shared arg validators + cores — the public mutations add the organizer
+// gate, and the `*Internal` variants (used by the tournament simulator) run
+// the exact same ball-by-ball engine without it. One source of truth.
+// ---------------------------------------------------------------------------
+
+const startInningsArgs = {
+  matchId: v.id("matches"),
+  battingTeamId: v.id("teams"),
+  bowlingTeamId: v.id("teams"),
+  strikerId: v.id("players"),
+  nonStrikerId: v.id("players"),
+  bowlerId: v.id("players"),
+};
+type StartInningsArgs = {
+  matchId: Id<"matches">;
+  battingTeamId: Id<"teams">;
+  bowlingTeamId: Id<"teams">;
+  strikerId: Id<"players">;
+  nonStrikerId: Id<"players">;
+  bowlerId: Id<"players">;
+};
+
+const setOpenersAndBowlerArgs = {
+  inningsId: v.id("innings"),
+  strikerId: v.id("players"),
+  nonStrikerId: v.id("players"),
+  bowlerId: v.id("players"),
+};
+type SetOpenersAndBowlerArgs = {
+  inningsId: Id<"innings">;
+  strikerId: Id<"players">;
+  nonStrikerId: Id<"players">;
+  bowlerId: Id<"players">;
+};
+
+const setBowlerArgs = { inningsId: v.id("innings"), bowlerId: v.id("players") };
+type SetBowlerArgs = { inningsId: Id<"innings">; bowlerId: Id<"players"> };
+
+const recordDeliveryArgs = {
+  matchId: v.id("matches"),
+  inningsId: v.id("innings"),
+  bowlerId: v.id("players"),
+  batsmanId: v.id("players"),
+  nonStrikerId: v.optional(v.id("players")),
+  runsScored: v.number(),
+  extraType: extraTypeValidator,
+  extraRuns: v.number(),
+  isWicket: v.boolean(),
+  wicketType: v.optional(wicketTypeValidator),
+  dismissedBatterId: v.optional(v.id("players")),
+  fielderId: v.optional(v.id("players")),
+  newBatsmanId: v.optional(v.id("players")),
+  shotRegion: v.optional(v.string()),
+  shotType: v.optional(v.string()),
+};
+type RecordDeliveryArgs = {
+  matchId: Id<"matches">;
+  inningsId: Id<"innings">;
+  bowlerId: Id<"players">;
+  batsmanId: Id<"players">;
+  nonStrikerId?: Id<"players">;
+  runsScored: number;
+  extraType: ExtraType;
+  extraRuns: number;
+  isWicket: boolean;
+  wicketType?: WicketType;
+  dismissedBatterId?: Id<"players">;
+  fielderId?: Id<"players">;
+  newBatsmanId?: Id<"players">;
+  shotRegion?: string;
+  shotType?: string;
+};
+
+const undoLastDeliveryArgs = {
+  matchId: v.id("matches"),
+  inningsId: v.id("innings"),
+};
+type UndoLastDeliveryArgs = {
+  matchId: Id<"matches">;
+  inningsId: Id<"innings">;
+};
+
 /**
  * Start a fresh innings: innings 1 on an UPCOMING match, or innings 2 once
  * innings 1 is complete. Scorer supplies the opening pair and first bowler.
  */
-export const startInnings = mutation({
-  args: {
-    matchId: v.id("matches"),
-    battingTeamId: v.id("teams"),
-    bowlingTeamId: v.id("teams"),
-    strikerId: v.id("players"),
-    nonStrikerId: v.id("players"),
-    bowlerId: v.id("players"),
-  },
-  handler: async (ctx, args) => {
+async function startInningsCore(ctx: MutationCtx, args: StartInningsArgs) {
     const match = await ctx.db.get(args.matchId);
     if (!match) throw new Error("Match not found");
-    await requireOrganizer(ctx, match.tournamentId);
     if (args.battingTeamId === args.bowlingTeamId) {
       throw new Error("A team cannot bat and bowl to itself.");
     }
@@ -218,23 +292,31 @@ export const startInnings = mutation({
       });
     }
     return { inningsId, number: inningsNumber };
+}
+
+export const startInnings = mutation({
+  args: startInningsArgs,
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get(args.matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    return await startInningsCore(ctx, args);
   },
 });
 
+/** System-internal variant used by the tournament simulator (no auth gate). */
+export const startInningsInternal = internalMutation({
+  args: startInningsArgs,
+  handler: async (ctx, args) => startInningsCore(ctx, args),
+});
+
 /** Set/repair the crease state on a fresh innings (used when innings 2 opens). */
-export const setOpenersAndBowler = mutation({
-  args: {
-    inningsId: v.id("innings"),
-    strikerId: v.id("players"),
-    nonStrikerId: v.id("players"),
-    bowlerId: v.id("players"),
-  },
-  handler: async (ctx, args) => {
+async function setOpenersAndBowlerCore(
+  ctx: MutationCtx,
+  args: SetOpenersAndBowlerArgs,
+) {
     const inn = await ctx.db.get(args.inningsId);
     if (!inn) throw new Error("Innings not found");
-    const matchForGate = await ctx.db.get(inn.matchId);
-    if (!matchForGate) throw new Error("Match not found");
-    await requireOrganizer(ctx, matchForGate.tournamentId);
     const deliveries = await getDeliveries(ctx, inn._id);
     if (deliveries.length > 0) {
       throw new Error("Cannot change the openers after the innings has begun.");
@@ -257,22 +339,52 @@ export const setOpenersAndBowler = mutation({
       await ctx.db.patch(match._id, { status: "LIVE", result: undefined });
     }
     return { inningsId: inn._id };
-  },
-});
+}
 
-/** Change the bowler (start of a new over). */
-export const setBowler = mutation({
-  args: { inningsId: v.id("innings"), bowlerId: v.id("players") },
-  handler: async (ctx, { inningsId, bowlerId }) => {
-    const inn = await ctx.db.get(inningsId);
+export const setOpenersAndBowler = mutation({
+  args: setOpenersAndBowlerArgs,
+  handler: async (ctx, args) => {
+    const inn = await ctx.db.get(args.inningsId);
     if (!inn) throw new Error("Innings not found");
     const matchForGate = await ctx.db.get(inn.matchId);
     if (!matchForGate) throw new Error("Match not found");
     await requireOrganizer(ctx, matchForGate.tournamentId);
+    return await setOpenersAndBowlerCore(ctx, args);
+  },
+});
+
+/** System-internal variant used by the tournament simulator (no auth gate). */
+export const setOpenersAndBowlerInternal = internalMutation({
+  args: setOpenersAndBowlerArgs,
+  handler: async (ctx, args) => setOpenersAndBowlerCore(ctx, args),
+});
+
+/** Change the bowler (start of a new over). */
+async function setBowlerCore(ctx: MutationCtx, args: SetBowlerArgs) {
+    const { inningsId, bowlerId } = args;
+    const inn = await ctx.db.get(inningsId);
+    if (!inn) throw new Error("Innings not found");
     await assertPlayerInTeam(ctx, bowlerId, inn.bowlingTeamId, "Bowler");
     await ctx.db.patch(inningsId, { currentBowlerId: bowlerId });
     return inningsId;
+}
+
+export const setBowler = mutation({
+  args: setBowlerArgs,
+  handler: async (ctx, args) => {
+    const inn = await ctx.db.get(args.inningsId);
+    if (!inn) throw new Error("Innings not found");
+    const matchForGate = await ctx.db.get(inn.matchId);
+    if (!matchForGate) throw new Error("Match not found");
+    await requireOrganizer(ctx, matchForGate.tournamentId);
+    return await setBowlerCore(ctx, args);
   },
+});
+
+/** System-internal variant used by the tournament simulator (no auth gate). */
+export const setBowlerInternal = internalMutation({
+  args: setBowlerArgs,
+  handler: async (ctx, args) => setBowlerCore(ctx, args),
 });
 
 /** Manual correction of who is at the crease. */
@@ -302,28 +414,9 @@ export const setBatsmen = mutation({
  * Record one delivery. The core scorer action — validates the ball, updates
  * the innings totals and crease, auto-completes the innings / match.
  */
-export const recordDelivery = mutation({
-  args: {
-    matchId: v.id("matches"),
-    inningsId: v.id("innings"),
-    bowlerId: v.id("players"),
-    batsmanId: v.id("players"),
-    nonStrikerId: v.optional(v.id("players")),
-    runsScored: v.number(),
-    extraType: extraTypeValidator,
-    extraRuns: v.number(),
-    isWicket: v.boolean(),
-    wicketType: v.optional(wicketTypeValidator),
-    dismissedBatterId: v.optional(v.id("players")),
-    fielderId: v.optional(v.id("players")),
-    newBatsmanId: v.optional(v.id("players")),
-    shotRegion: v.optional(v.string()), // scoring-shot placement for the wagon wheel
-    shotType: v.optional(v.string()), // which shot was played (drive, pull, sweep…)
-  },
-  handler: async (ctx, args) => {
+async function recordDeliveryCore(ctx: MutationCtx, args: RecordDeliveryArgs) {
     const match = await ctx.db.get(args.matchId);
     if (!match) throw new Error("Match not found");
-    await requireOrganizer(ctx, match.tournamentId);
     if (match.status !== "LIVE") throw new Error("The match is not live.");
     const inn = await ctx.db.get(args.inningsId);
     if (!inn || inn.matchId !== match._id) {
@@ -779,7 +872,22 @@ export const recordDelivery = mutation({
     }
 
     return { ok: true, inningsComplete: false };
+}
+
+export const recordDelivery = mutation({
+  args: recordDeliveryArgs,
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get(args.matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    return await recordDeliveryCore(ctx, args);
   },
+});
+
+/** System-internal variant used by the tournament simulator (no auth gate). */
+export const recordDeliveryInternal = internalMutation({
+  args: recordDeliveryArgs,
+  handler: async (ctx, args) => recordDeliveryCore(ctx, args),
 });
 
 /**
@@ -789,12 +897,13 @@ export const recordDelivery = mutation({
  * to the most recent innings that actually has balls so the scorer can fix
  * an error made on the final ball of the previous innings.
  */
-export const undoLastDelivery = mutation({
-  args: { matchId: v.id("matches"), inningsId: v.id("innings") },
-  handler: async (ctx, { matchId, inningsId }) => {
+async function undoLastDeliveryCore(
+  ctx: MutationCtx,
+  args: UndoLastDeliveryArgs,
+) {
+    const { matchId, inningsId } = args;
     const match = await ctx.db.get(matchId);
     if (!match) throw new Error("Match not found");
-    await requireOrganizer(ctx, match.tournamentId);
     const inn = await ctx.db.get(inningsId);
     if (!inn || inn.matchId !== match._id) {
       throw new Error("Innings does not belong to this match.");
@@ -895,5 +1004,20 @@ export const undoLastDelivery = mutation({
       await ctx.db.patch(match._id, { status: "LIVE", result: undefined });
     }
     return { ok: true, reset: false };
+}
+
+export const undoLastDelivery = mutation({
+  args: undoLastDeliveryArgs,
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get(args.matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    return await undoLastDeliveryCore(ctx, args);
   },
+});
+
+/** System-internal variant used by the tournament simulator (no auth gate). */
+export const undoLastDeliveryInternal = internalMutation({
+  args: undoLastDeliveryArgs,
+  handler: async (ctx, args) => undoLastDeliveryCore(ctx, args),
 });
