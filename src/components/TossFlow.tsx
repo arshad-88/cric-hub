@@ -1,15 +1,16 @@
 // TossFlow.tsx — the pre-match toss ceremony with an Indian ₹10 coin.
-// The WEBSITE performs the toss: one tap flips the coin at random, the result
-// decides the winner (Heads → team A, Tails → team B), and the winner picks
-// bat or bowl. The outcome is persisted with matches.setToss so the public
-// match center only shows "X won the toss and chose to bat/bowl" — viewers
-// never learn whether it came up heads or tails.
+// The WEBSITE performs the toss: first the admin picks which team calls the
+// toss, that team chooses heads or tails, then one tap flips the coin at
+// random. If the coin lands on the caller's call they win the toss; otherwise
+// the other team does. The winner picks bat or bowl. The outcome is persisted
+// with matches.setToss so the public match center only shows "X won the toss
+// and chose to bat/bowl" — viewers never learn whether it came up heads/tails.
 
 import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Coins, RotateCw, Trophy } from "lucide-react";
+import { Coins, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MicroLabel } from "@/components/swiss";
 import { cn } from "@/lib/utils";
@@ -161,7 +162,7 @@ function Coin3D({ result, spinning, size = 148 }: { result: Side; spinning: bool
 }
 
 // ---------------------------------------------------------------------------
-// Toss flow: ready (tap to toss) → flipping → result (winner picks bat/bowl)
+// Toss flow: caller → call (heads/tails) → flipping → result (winner picks bat/bowl)
 // ---------------------------------------------------------------------------
 
 export default function TossFlow({
@@ -174,16 +175,28 @@ export default function TossFlow({
   teamB: TeamLite;
 }) {
   const setToss = useMutation(api.matches.setToss);
-  const [step, setStep] = useState<"ready" | "flipping" | "result">("ready");
+  const [step, setStep] = useState<"caller" | "pick" | "flipping" | "result">("caller");
+  const [callingTeam, setCallingTeam] = useState<TeamLite | null>(null);
+  const [callSide, setCallSide] = useState<Side | null>(null);
   const [result, setResult] = useState<Side | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // The website tosses the coin — Heads belongs to team A, Tails to team B.
-  const winner = result ? (result === "heads" ? teamA : teamB) : null;
+  const otherTeam = callingTeam
+    ? callingTeam._id === teamA._id
+      ? teamB
+      : teamA
+    : null;
+  // The caller wins only when the coin lands on their call.
+  const winner =
+    result && callingTeam && callSide
+      ? result === callSide
+        ? callingTeam
+        : otherTeam
+      : null;
   const loser = winner ? (winner._id === teamA._id ? teamB : teamA) : null;
 
   const startFlip = () => {
-    if (saving) return;
+    if (saving || !callSide) return;
     const r: Side = Math.random() < 0.5 ? "heads" : "tails";
     setResult(r);
     setStep("flipping");
@@ -208,6 +221,13 @@ export default function TossFlow({
     }
   };
 
+  const resetToss = () => {
+    setCallingTeam(null);
+    setCallSide(null);
+    setResult(null);
+    setStep("caller");
+  };
+
   return (
     <div className="border-2 border-[#facc15] bg-card p-4 panel-glow">
       <div className="flex items-center gap-2">
@@ -215,26 +235,27 @@ export default function TossFlow({
         <MicroLabel className="text-[#facc15]">Toss time</MicroLabel>
       </div>
 
-      {/* ---- step 1: ready — tap to toss ---------------------------------- */}
-      {step === "ready" && (
+      {/* ---- step 1: pick which team calls --------------------------------- */}
+      {step === "caller" && (
         <>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            The website tosses the ₹10 coin — the result decides who chooses.
-            <span className="mt-1 block font-bold uppercase tracking-widest text-slate-400">
-              Heads → {teamA.name} · Tails → {teamB.name}
-            </span>
+            A real toss with a real ₹10 coin. Pick which team calls — they
+            choose heads or tails, then the website flips the coin live.
           </p>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            {[
-              { team: teamA, side: "heads" as Side },
-              { team: teamB, side: "tails" as Side },
-            ].map(({ team, side }) => (
-              <div
+            {[teamA, teamB].map((team) => (
+              <button
                 key={team._id}
-                className="flex flex-col items-center gap-2 border border-border bg-card px-3 py-3"
+                type="button"
+                onClick={() => {
+                  setCallingTeam(team);
+                  setCallSide(null);
+                  setStep("pick");
+                }}
+                className="flex flex-col items-center gap-2 border border-border bg-card px-3 py-4 transition-colors hover:border-[#facc15]"
               >
                 <span
-                  className="flex size-9 items-center justify-center text-xs font-black text-white"
+                  className="flex size-10 items-center justify-center text-xs font-black text-white"
                   style={{ backgroundColor: team.color }}
                 >
                   {team.shortCode}
@@ -242,9 +263,41 @@ export default function TossFlow({
                 <span className="block w-full truncate text-center text-[10px] font-extrabold uppercase tracking-wide text-slate-200">
                   {team.name}
                 </span>
-                <span className="w-14">
-                  <RupeeCoin side={side} size={56} />
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#facc15]">
+                  calls the toss
                 </span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-center text-[9px] font-bold uppercase tracking-widest text-slate-500">
+            The flip is decided here, live — winner chooses bat or bowl
+          </p>
+        </>
+      )}
+
+      {/* ---- step 2: the caller picks heads or tails ------------------------ */}
+      {step === "pick" && callingTeam && (
+        <>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            <span className="font-extrabold uppercase tracking-wide text-slate-200">
+              {callingTeam.name}
+            </span>{" "}
+            — call heads or tails. The other side goes to {otherTeam?.name}.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {(["heads", "tails"] as Side[]).map((side) => (
+              <button
+                key={side}
+                type="button"
+                onClick={() => setCallSide(side)}
+                className={cn(
+                  "flex flex-col items-center gap-2 border px-3 py-4 transition-colors",
+                  callSide === side
+                    ? "border-[#facc15] bg-[#422006]"
+                    : "border-border bg-card hover:border-[#facc15]",
+                )}
+              >
+                <RupeeCoin side={side} size={56} />
                 <span
                   className={cn(
                     "text-[9px] font-black uppercase tracking-widest",
@@ -253,24 +306,29 @@ export default function TossFlow({
                 >
                   {side === "heads" ? "Heads · Chakra" : "Tails · ₹10"}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
           <Button
             type="button"
             onClick={startFlip}
-            disabled={saving}
+            disabled={!callSide || saving}
             className="mt-3 w-full rounded-none bg-[#facc15] py-4 text-xs font-black uppercase tracking-widest text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]"
           >
-            <Coins className="size-4" /> Toss the ₹10 coin
+            <Coins className="size-4" />
+            {callingTeam.shortCode} call {callSide ? callSide.toUpperCase() : "…"} — flip the ₹10 coin
           </Button>
-          <p className="mt-2 text-center text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            The flip is decided here, live — winner chooses bat or bowl
-          </p>
+          <button
+            type="button"
+            onClick={resetToss}
+            className="mt-2 flex w-full items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#22d3ee]"
+          >
+            <RotateCw className="size-3" /> Change caller
+          </button>
         </>
       )}
 
-      {/* ---- step 2: flipping ---------------------------------------------- */}
+      {/* ---- step 3: flipping ---------------------------------------------- */}
       {step === "flipping" && result && (
         <div className="mt-4 flex flex-col items-center gap-4 py-2 text-center">
           <Coin3D result={result} spinning />
@@ -279,13 +337,13 @@ export default function TossFlow({
               Tossing the coin
             </p>
             <p className="mt-1 animate-pulse text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              The website decides… heads or tails
+              {callingTeam?.shortCode} called {callSide?.toUpperCase()} — the website decides…
             </p>
           </div>
         </div>
       )}
 
-      {/* ---- step 3: result + decision ------------------------------------- */}
+      {/* ---- step 4: result + decision ------------------------------------- */}
       {step === "result" && winner && loser && result && (
         <>
           <div className="mt-4 flex flex-col items-center gap-4 py-1 text-center">
@@ -298,7 +356,10 @@ export default function TossFlow({
                 {winner.name} win the toss
               </p>
               <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                {winner.name} choose · {loser.name} take the field
+                {callingTeam?.name} called {callSide === "heads" ? "heads" : "tails"} — {result === callSide ? "call matches!" : "no match, coin decides"}
+              </p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                {winner.shortCode} choose · {loser.shortCode} take the field
               </p>
             </div>
           </div>
@@ -326,10 +387,7 @@ export default function TossFlow({
           {!saving && (
             <button
               type="button"
-              onClick={() => {
-                setResult(null);
-                setStep("ready");
-              }}
+              onClick={resetToss}
               className="mt-2 flex w-full items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#22d3ee]"
             >
               <RotateCw className="size-3" /> Re-toss the coin
