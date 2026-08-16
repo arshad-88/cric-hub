@@ -1,8 +1,9 @@
 // TossFlow.tsx — the pre-match toss ceremony with an Indian ₹10 coin.
-// The scorer picks which captain calls the toss, the caller chooses heads or
-// tails, the coin flips in 3D, and the toss winner chooses bat or bowl. The
-// result is persisted with matches.setToss so the public match center shows
-// "X won the toss and chose to bat/bowl".
+// The WEBSITE performs the toss: one tap flips the coin at random, the result
+// decides the winner (Heads → team A, Tails → team B), and the winner picks
+// bat or bowl. The outcome is persisted with matches.setToss so the public
+// match center only shows "X won the toss and chose to bat/bowl" — viewers
+// never learn whether it came up heads or tails.
 
 import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
@@ -49,7 +50,6 @@ function HeadsFace({ size }: { size: number }) {
       </defs>
       <circle cx="50" cy="50" r="48" fill="url(#heads-gold)" stroke="#a16207" strokeWidth="1.4" />
       <circle cx="50" cy="50" r="40" fill="#fef3c7" stroke="#b45309" strokeWidth="1" />
-      {/* chakra ring + spokes */}
       <circle cx="50" cy="50" r="34" fill="none" stroke="#92400e" strokeWidth="1.3" />
       <g stroke="#92400e" strokeWidth="1.8" strokeLinecap="round">
         {SPOKE_DEGREES.map((deg) => (
@@ -103,7 +103,7 @@ function TailsFace({ size }: { size: number }) {
 }
 
 /** A static (non-flipping) coin showing one face. */
-function RupeeCoin({ side, size = 132 }: { side: Side; size?: number }) {
+function RupeeCoin({ side, size = 64 }: { side: Side; size?: number }) {
   return side === "heads" ? <HeadsFace size={size} /> : <TailsFace size={size} />;
 }
 
@@ -161,7 +161,7 @@ function Coin3D({ result, spinning, size = 148 }: { result: Side; spinning: bool
 }
 
 // ---------------------------------------------------------------------------
-// Toss ceremony flow: caller → call → flipping → result (bat / bowl)
+// Toss flow: ready (tap to toss) → flipping → result (winner picks bat/bowl)
 // ---------------------------------------------------------------------------
 
 export default function TossFlow({
@@ -174,18 +174,16 @@ export default function TossFlow({
   teamB: TeamLite;
 }) {
   const setToss = useMutation(api.matches.setToss);
-  const [step, setStep] = useState<"caller" | "call" | "flipping" | "result">("caller");
-  const [callerId, setCallerId] = useState<string>("");
-  const [callSide, setCallSide] = useState<Side>("heads");
+  const [step, setStep] = useState<"ready" | "flipping" | "result">("ready");
   const [result, setResult] = useState<Side | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const caller = callerId === teamA._id ? teamA : callerId === teamB._id ? teamB : null;
-  const other = caller ? (caller._id === teamA._id ? teamB : teamA) : null;
-  const winner = result && caller ? (callSide === result ? caller : other!) : null;
+  // The website tosses the coin — Heads belongs to team A, Tails to team B.
+  const winner = result ? (result === "heads" ? teamA : teamB) : null;
+  const loser = winner ? (winner._id === teamA._id ? teamB : teamA) : null;
 
   const startFlip = () => {
-    if (!caller) return;
+    if (saving) return;
     const r: Side = Math.random() < 0.5 ? "heads" : "tails";
     setResult(r);
     setStep("flipping");
@@ -203,7 +201,7 @@ export default function TossFlow({
       });
       toast.success(`${winner.name} won the toss and chose to ${decision} first.`);
       // The scorecard subscription re-renders with the saved toss and swaps this
-      // ceremony for the "start innings" panel, pre-filled with the batting side.
+      // ceremony for the "start innings" panel, locked to the toss decision.
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save the toss.");
       setSaving(false);
@@ -217,112 +215,78 @@ export default function TossFlow({
         <MicroLabel className="text-[#facc15]">Toss time</MicroLabel>
       </div>
 
-      {/* ---- step 1: who calls the toss? ----------------------------------- */}
-      {step === "caller" && (
+      {/* ---- step 1: ready — tap to toss ---------------------------------- */}
+      {step === "ready" && (
         <>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            One captain calls heads or tails in the air. The winner of the toss
-            decides who bats first.
+            The website tosses the ₹10 coin — the result decides who chooses.
+            <span className="mt-1 block font-bold uppercase tracking-widest text-slate-400">
+              Heads → {teamA.name} · Tails → {teamB.name}
+            </span>
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {[teamA, teamB].map((t) => (
-              <button
-                key={t._id}
-                type="button"
-                onClick={() => {
-                  setCallerId(t._id);
-                  setStep("call");
-                }}
-                className="border px-3 py-4 text-center transition-colors border-border bg-card text-slate-300 hover:border-[#facc15] hover:text-[#facc15]"
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {[
+              { team: teamA, side: "heads" as Side },
+              { team: teamB, side: "tails" as Side },
+            ].map(({ team, side }) => (
+              <div
+                key={team._id}
+                className="flex flex-col items-center gap-2 border border-border bg-card px-3 py-3"
               >
                 <span
-                  className="mx-auto mb-2 flex size-10 items-center justify-center text-sm font-black text-white"
-                  style={{ backgroundColor: t.color }}
+                  className="flex size-9 items-center justify-center text-xs font-black text-white"
+                  style={{ backgroundColor: team.color }}
                 >
-                  {t.shortCode}
+                  {team.shortCode}
                 </span>
-                <span className="block truncate text-xs font-extrabold uppercase tracking-wide">
-                  {t.name}
+                <span className="block w-full truncate text-center text-[10px] font-extrabold uppercase tracking-wide text-slate-200">
+                  {team.name}
                 </span>
-                <span className="mt-1 block text-[9px] font-bold uppercase tracking-widest text-slate-500">
-                  calls the toss
+                <span className="w-14">
+                  <RupeeCoin side={side} size={56} />
                 </span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ---- step 2: heads or tails? --------------------------------------- */}
-      {step === "call" && caller && (
-        <>
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            <span className="font-extrabold uppercase tracking-wide text-[#facc15]">
-              {caller.name}
-            </span>{" "}
-            — call it in the air.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(["heads", "tails"] as Side[]).map((side) => (
-              <button
-                key={side}
-                type="button"
-                onClick={() => setCallSide(side)}
-                className={cn(
-                  "border px-2 py-3 text-center transition-colors",
-                  callSide === side
-                    ? "border-[#facc15] bg-[#422006]/40"
-                    : "border-border bg-card hover:border-[#facc15]/50",
-                )}
-              >
-                <div className="mx-auto w-16">
-                  <RupeeCoin side={side} size={64} />
-                </div>
                 <span
                   className={cn(
-                    "mt-2 block text-[10px] font-extrabold uppercase tracking-widest",
-                    callSide === side ? "text-[#facc15]" : "text-slate-400",
+                    "text-[9px] font-black uppercase tracking-widest",
+                    side === "heads" ? "text-[#facc15]" : "text-[#22d3ee]",
                   )}
                 >
                   {side === "heads" ? "Heads · Chakra" : "Tails · ₹10"}
                 </span>
-              </button>
+              </div>
             ))}
           </div>
           <Button
             type="button"
             onClick={startFlip}
-            className="mt-3 w-full rounded-none bg-[#facc15] text-[10px] font-black uppercase tracking-widest text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]"
+            disabled={saving}
+            className="mt-3 w-full rounded-none bg-[#facc15] py-4 text-xs font-black uppercase tracking-widest text-[#422006] hover:bg-[#22c55e] hover:text-[#052e16]"
           >
-            <Coins className="size-3.5" /> Flip the ₹10 coin
+            <Coins className="size-4" /> Toss the ₹10 coin
           </Button>
-          <button
-            type="button"
-            onClick={() => setStep("caller")}
-            className="mt-2 flex w-full items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#facc15]"
-          >
-            <RotateCw className="size-3" /> Choose the other team
-          </button>
+          <p className="mt-2 text-center text-[9px] font-bold uppercase tracking-widest text-slate-500">
+            The flip is decided here, live — winner chooses bat or bowl
+          </p>
         </>
       )}
 
-      {/* ---- step 3: flipping ---------------------------------------------- */}
-      {step === "flipping" && caller && result && (
+      {/* ---- step 2: flipping ---------------------------------------------- */}
+      {step === "flipping" && result && (
         <div className="mt-4 flex flex-col items-center gap-4 py-2 text-center">
           <Coin3D result={result} spinning />
           <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-              {caller.name} called {callSide === "heads" ? "heads" : "tails"}…
-            </p>
-            <p className="mt-1 animate-pulse text-[10px] font-black uppercase tracking-[0.3em] text-[#facc15]">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#facc15]">
               Tossing the coin
+            </p>
+            <p className="mt-1 animate-pulse text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              The website decides… heads or tails
             </p>
           </div>
         </div>
       )}
 
-      {/* ---- step 4: result + decision ------------------------------------- */}
-      {step === "result" && caller && winner && result && (
+      {/* ---- step 3: result + decision ------------------------------------- */}
+      {step === "result" && winner && loser && result && (
         <>
           <div className="mt-4 flex flex-col items-center gap-4 py-1 text-center">
             <Coin3D result={result} spinning={false} />
@@ -330,18 +294,11 @@ export default function TossFlow({
               <p className="micro-label text-[#facc15]">
                 It's {result === "heads" ? "HEADS" : "TAILS"}!
               </p>
-              {winner._id === caller._id ? (
-                <p className="mt-1 text-sm font-extrabold uppercase tracking-tight text-white">
-                  {winner.name} called it right — they win the toss!
-                </p>
-              ) : (
-                <p className="mt-1 text-sm font-extrabold uppercase tracking-tight text-white">
-                  {caller.name} called {callSide === "heads" ? "heads" : "tails"} but
-                  the coin had other plans — {winner.name} wins the toss!
-                </p>
-              )}
-              <p className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                <Trophy className="size-3 text-[#facc15]" /> Winner's call — bat or bowl
+              <p className="mt-1 text-sm font-extrabold uppercase tracking-tight text-white">
+                {winner.name} win the toss
+              </p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                {winner.name} choose · {loser.name} take the field
               </p>
             </div>
           </div>
@@ -352,7 +309,7 @@ export default function TossFlow({
               onClick={() => void chooseDecision("bat")}
               className="rounded-none bg-[#22c55e] py-4 text-[10px] font-black uppercase tracking-widest text-[#052e16] hover:bg-[#facc15] hover:text-[#422006]"
             >
-              🏏 Bat first
+              🏏 {winner.shortCode} — bat first
             </Button>
             <Button
               type="button"
@@ -360,22 +317,22 @@ export default function TossFlow({
               onClick={() => void chooseDecision("bowl")}
               className="rounded-none bg-[#22d3ee] py-4 text-[10px] font-black uppercase tracking-widest text-[#083344] hover:bg-[#facc15] hover:text-[#422006]"
             >
-              ⚾ Bowl first
+              ⚾ {winner.shortCode} — bowl first
             </Button>
           </div>
           <p className="mt-2 text-center text-[9px] font-bold uppercase tracking-widest text-slate-500">
-            {saving ? "Locking in the toss…" : `${winner.name} decides · the other side takes the field`}
+            {saving ? "Locking in the toss…" : "Winner's call — decide bat or bowl"}
           </p>
           {!saving && (
             <button
               type="button"
               onClick={() => {
                 setResult(null);
-                setStep("call");
+                setStep("ready");
               }}
               className="mt-2 flex w-full items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#22d3ee]"
             >
-              <RotateCw className="size-3" /> Flip again
+              <RotateCw className="size-3" /> Re-toss the coin
             </button>
           )}
         </>

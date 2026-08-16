@@ -772,10 +772,24 @@ function StartInningsPanel({
 }) {
   const startInnings = useMutation(api.scoring.startInnings);
   const [battingId, setBattingId] = useState<string>(defaultBattingId);
+  // A saved toss decides the batting side — the scorer can still override it
+  // (e.g. a mistyped toss) by tapping "Override toss".
+  const [overrideToss, setOverrideToss] = useState(false);
   const [striker, setStriker] = useState("");
   const [nonStriker, setNonStriker] = useState("");
   const [bowler, setBowler] = useState("");
   const [busy, setBusy] = useState(false);
+  const tossLocked = Boolean(defaultBattingId) && !overrideToss;
+  const lockedBattingTeam = tossLocked
+    ? defaultBattingId === teamA._id
+      ? teamA
+      : teamB
+    : null;
+  const lockedBowlingTeam = lockedBattingTeam
+    ? lockedBattingTeam._id === teamA._id
+      ? teamB
+      : teamA
+    : null;
   const battingSquad = useQuery(api.players.listByTeam, battingId ? { teamId: battingId as Id<"teams"> } : "skip");
   const bowlingId = battingId ? (battingId === teamA._id ? teamB._id : teamA._id) : "";
   const bowlingSquad = useQuery(api.players.listByTeam, bowlingId ? { teamId: bowlingId as Id<"teams"> } : "skip");
@@ -814,28 +828,47 @@ function StartInningsPanel({
       <p className="mt-1 text-xs text-slate-500">
         Who bats first? Pick the opening pair and the first bowler.
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {[teamA, teamB].map((t) => (
+      {tossLocked && lockedBattingTeam && lockedBowlingTeam ? (
+        <div className="mt-3 space-y-2">
+          <p className="flex items-center justify-between gap-2 border-2 border-[#22c55e] bg-[#052e16]/50 px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide text-[#22c55e]">
+            <span className="truncate">{lockedBattingTeam.name} bat first</span>
+            <Check className="size-4 shrink-0" />
+          </p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            {lockedBowlingTeam.name} bowl first — decided by the toss
+          </p>
           <button
-            key={t._id}
             type="button"
-            onClick={() => {
-              setBattingId(t._id);
-              setStriker("");
-              setNonStriker("");
-              setBowler("");
-            }}
-            className={cn(
-              "border px-3 py-3 text-xs font-extrabold uppercase tracking-wide",
-              battingId === t._id
-                ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]"
-                : "border-border bg-card text-slate-300",
-            )}
+            onClick={() => setOverrideToss(true)}
+            className="flex w-full items-center justify-center gap-1 border border-border bg-card py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:border-[#facc15] hover:text-[#facc15]"
           >
-            {t.name} bat
+            <RotateCcw className="size-3" /> Override toss (scorer error)
           </button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[teamA, teamB].map((t) => (
+            <button
+              key={t._id}
+              type="button"
+              onClick={() => {
+                setBattingId(t._id);
+                setStriker("");
+                setNonStriker("");
+                setBowler("");
+              }}
+              className={cn(
+                "border px-3 py-3 text-xs font-extrabold uppercase tracking-wide",
+                battingId === t._id
+                  ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]"
+                  : "border-border bg-card text-slate-300",
+              )}
+            >
+              {t.name} bat
+            </button>
+          ))}
+        </div>
+      )}
       {battingId && (
         <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-2">
