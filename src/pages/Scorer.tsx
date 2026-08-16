@@ -1046,7 +1046,7 @@ function Picker({
         <SelectContent className="rounded-none border-border bg-card">
           {players.map((p) => (
             <SelectItem key={p._id} value={p._id}>
-              {p.name} · {p.role}
+              {p.name}
             </SelectItem>
           ))}
         </SelectContent>

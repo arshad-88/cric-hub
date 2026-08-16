@@ -323,13 +323,16 @@ async function normalizeLeadership(
   }
 }
 
-/** Organizer: add a player to a squad (styles + team role). */
+/** Organizer: add a player to a squad (styles + team role). Every player is
+ *  eligible to bat and bowl, so there is no manual batting/bowling role — the
+ *  stored role defaults to "All-rounder" for compatibility with existing
+ *  leaderboards and auction squads. */
 export const create = mutation({
   args: {
     teamId: v.id("teams"),
     name: v.string(),
     phone: v.optional(v.string()),
-    role: playerRoleValidator,
+    role: v.optional(playerRoleValidator),
     battingStyle: v.optional(v.string()),
     bowlingStyle: v.optional(v.string()),
     jerseyNumber: v.optional(v.number()),
@@ -349,7 +352,7 @@ export const create = mutation({
       // against the normalized number on the user account, so they silently
       // stopped matching.
       phone: args.phone ? normalizePhone(args.phone) : undefined,
-      role: args.role,
+      role: args.role ?? "All-rounder",
       battingStyle: args.battingStyle,
       bowlingStyle: args.bowlingStyle,
       jerseyNumber: args.jerseyNumber,
@@ -385,7 +388,7 @@ export const update = mutation({
     await ctx.db.patch(args.playerId, {
       name: args.name ?? player.name,
       phone: args.phone ? normalizePhone(args.phone) : player.phone,
-      role: args.role ?? player.role,
+      role: args.role ?? player.role ?? "All-rounder",
       battingStyle: args.battingStyle !== undefined ? args.battingStyle : player.battingStyle,
       bowlingStyle: args.bowlingStyle !== undefined ? args.bowlingStyle : player.bowlingStyle,
       jerseyNumber: args.jerseyNumber !== undefined ? args.jerseyNumber : player.jerseyNumber,

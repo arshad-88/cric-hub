@@ -104,7 +104,6 @@ export default function PlayerProfile() {
                   {team.name}
                 </span>
               )}
-              <span>{player.role}</span>
               {player.jerseyNumber != null && <span>#{player.jerseyNumber}</span>}
               <span>{tournament?.name ?? "League"}</span>
             </p>

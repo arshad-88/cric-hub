@@ -462,11 +462,8 @@ function XIPanel({
                 {p.name}
               </PlayerLink>
               <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
-                {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
+                {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || "Bats & bowls"}
               </span>
-            </span>
-            <span className="shrink-0 bg-[#22c55e]/10 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[#22c55e]">
-              {p.role}
             </span>
           </li>
         ))}

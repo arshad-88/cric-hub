@@ -42,12 +42,6 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 
 const BALL_TYPES = ["Grace Ball", "Leather", "Tennis"] as const;
-const PLAYER_ROLES = [
-  "Batsman",
-  "Bowler",
-  "All-rounder",
-  "Wicketkeeper",
-] as const;
 const TEAM_ROLES = ["Player", "Captain", "Vice-Captain"] as const;
 const STAGES = ["Group", "Quarter-final", "Semi-final", "Final"] as const;
 const BATTING_STYLES = ["Right-hand bat", "Left-hand bat"] as const;
@@ -67,7 +61,7 @@ const BOWLING_STYLES = [
 ] as const;
 
 type BallType = (typeof BALL_TYPES)[number];
-type PlayerRole = (typeof PLAYER_ROLES)[number];
+type PlayerRole = "Batsman" | "Bowler" | "All-rounder" | "Wicketkeeper";
 type TeamRole = (typeof TEAM_ROLES)[number];
 type Stage = (typeof STAGES)[number];
 
@@ -1389,18 +1383,9 @@ function RosterEditor({ team, squad }: { team: TeamDoc; squad: PlayerDoc[] }) {
                   )}
                 </span>
                 <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
-                  {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
+                  {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || "Bats & bowls"}
                 </span>
               </span>
-            </span>
-            <span
-              className={`shrink-0 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest ${
-                p.role === "Wicketkeeper"
-                  ? "bg-[#a78bfa]/20 text-[#a78bfa]"
-                  : "bg-[#22c55e]/10 text-[#22c55e]"
-              }`}
-            >
-              {p.role}
             </span>
             <button
               type="button"
@@ -1455,7 +1440,6 @@ function PlayerForm({
   const create = useMutation(api.players.create);
   const update = useMutation(api.players.update);
   const [name, setName] = useState(player?.name ?? "");
-  const [role, setRole] = useState<PlayerRole>(player?.role ?? "Batsman");
   const [teamRole, setTeamRole] = useState<TeamRole>(
     player?.isCaptain ? "Captain" : player?.isViceCaptain ? "Vice-Captain" : "Player",
   );
@@ -1471,7 +1455,6 @@ function PlayerForm({
     setBusy(true);
     try {
       const common = {
-        role,
         isCaptain: teamRole === "Captain" || undefined,
         isViceCaptain: teamRole === "Vice-Captain" || undefined,
         battingStyle: battingStyle || undefined,
@@ -1502,18 +1485,9 @@ function PlayerForm({
           placeholder="Full name"
         />
       </Field>
-      <Field label="Role">
-        <Select value={role} onValueChange={(v) => setRole(v as PlayerRole)}>
-          <SelectTrigger className={inputCls}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="rounded-none border-border bg-card">
-            {PLAYER_ROLES.map((r) => (
-              <SelectItem key={r} value={r}>{r}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+      <p className="sm:col-span-2 -mt-1 text-[9px] uppercase tracking-widest text-slate-600">
+        Every player bats and bowls — no role to pick.
+      </p>
       <Field label="Team role">
         <Select value={teamRole} onValueChange={(v) => setTeamRole(v as TeamRole)}>
           <SelectTrigger className={inputCls}>

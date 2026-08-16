@@ -8,17 +8,12 @@ import { formatDate } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
-const roleStyles: Record<string, string> = {
-  Batsman: "bg-[#22d3ee] text-[#083344]",
-  Bowler: "bg-[#facc15] text-[#422006]",
-  "All-rounder": "bg-[#22c55e] text-[#052e16]",
-  Wicketkeeper: "bg-[#a78bfa] text-[#2e1065]",
-};
-
 type Player = {
   _id: string;
   name: string;
   role: string;
+  battingStyle?: string | null;
+  bowlingStyle?: string | null;
   jerseyNumber?: number | null;
   isPlayingXI?: boolean | null;
   isCaptain?: boolean | null;
@@ -52,10 +47,8 @@ function SquadList({ players, title }: { players: Player[]; title: string }) {
                 </span>
               )}
             </span>
-            <span
-              className={`shrink-0 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest ${roleStyles[p.role]}`}
-            >
-              {p.role}
+            <span className="shrink-0 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-slate-500">
+              {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || "Bats & bowls"}
             </span>
           </li>
         ))}
@@ -103,9 +96,13 @@ export default function TeamDetail() {
   const hasXI = playingXI.length > 0;
   const xi = hasXI ? playingXI : players;
   const benchList = hasXI ? bench : [];
-  const batsmen = players.filter((p) => p.role === "Batsman").length;
-  const bowlers = players.filter((p) => p.role === "Bowler").length;
-  const allRounders = players.filter((p) => p.role === "All-rounder").length;
+  // No manual roles anymore — composition is derived from the recorded
+  // batting/bowling styles (every player bats and bowls).
+  const batsmen = players.filter((p) => p.battingStyle).length;
+  const bowlers = players.filter((p) => p.bowlingStyle).length;
+  const allRounders = players.filter(
+    (p) => p.battingStyle && p.bowlingStyle,
+  ).length;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
