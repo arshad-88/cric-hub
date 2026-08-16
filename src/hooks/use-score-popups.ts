@@ -39,7 +39,16 @@ type EventRow = {
   overLabel?: string;
 };
 
-const POPUP_MS = 3600;
+const POPUP_MS = 3000;
+
+/** Short human label for a batting style, e.g. "RHB" / "LHB". */
+export function battingLabel(style?: string): string | null {
+  if (!style) return null;
+  const s = style.toLowerCase();
+  if (s.includes("right") || s.includes("rhb")) return "RHB";
+  if (s.includes("left") || s.includes("lhb")) return "LHB";
+  return style;
+}
 
 /** Short human label for a bowling style, e.g. "Leg spinner" / "Medium pace". */
 export function bowlingLabel(style?: string): string | null {

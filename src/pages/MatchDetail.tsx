@@ -11,6 +11,8 @@ import { PointsTable } from "@/components/PointsTable";
 import { PlayerLink } from "@/components/PlayerLink";
 import { ManhattanChart, WagonWheel } from "@/components/MatchCharts";
 import { BallChip, MicroLabel, StatusPill, TeamMark } from "@/components/swiss";
+import { ScorePopupStage } from "@/components/ScorePopupStage";
+import { useScorePopups } from "@/hooks/use-score-popups";
 import { formatDate, formatTime, type InningsView } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -47,6 +49,10 @@ export default function MatchDetail() {
   const followMatch = useMutation(api.notifications.followMatch);
   const unfollowMatch = useMutation(api.notifications.unfollowMatch);
   const isFollowing = follows ? follows.includes(id ?? "") : false;
+  const events = useQuery(
+    api.notifications.listForMatch,
+    id ? { matchId: id as Id<"matches"> } : "skip",
+  );
 
   const teamASquad = useQuery(
     api.players.listByTeam,
@@ -66,6 +72,18 @@ export default function MatchDetail() {
       ? { matchId: scorecard.match.id as Id<"matches"> }
       : "skip",
   );
+
+  // Live popups need the batting/bowling squads of the CURRENT innings (the
+  // toss may have sent either team in first).
+  const battingSquad =
+    scorecard?.currentInnings && scorecard.currentInnings.battingTeam._id === scorecard.teamA._id
+      ? (teamASquad ?? [])
+      : (teamBSquad ?? []);
+  const bowlingSquad =
+    scorecard?.currentInnings && scorecard.currentInnings.battingTeam._id === scorecard.teamA._id
+      ? (teamBSquad ?? [])
+      : (teamASquad ?? []);
+  const popups = useScorePopups(scorecard, battingSquad, bowlingSquad, events ?? []);
 
   if (scorecard === undefined) {
     return (
@@ -108,6 +126,7 @@ export default function MatchDetail() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <ScorePopupStage popups={popups} />
       <SiteHeader />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">
