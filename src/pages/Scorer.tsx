@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { formatOvers } from "@/lib/format";
 import { useScorePopups } from "@/hooks/use-score-popups";
 import { ScorePopupStage } from "@/components/ScorePopupStage";
+import TossFlow from "@/components/TossFlow";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -35,6 +36,7 @@ import {
   Clapperboard,
   KeyRound,
   RotateCcw,
+  Trophy,
   Video,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -144,6 +146,24 @@ export default function Scorer() {
   }
 
   const { match, teamA, teamB } = scorecard;
+
+  // The toss drives the start-of-match flow: once a toss is saved the scorer
+  // skips the ceremony and lands straight on "start innings" with the batting
+  // side pre-filled from the toss decision (bat → winner bats, bowl → the other).
+  const tossSaved = Boolean(match.tossWinnerId && match.tossDecision);
+  const tossWinnerTeam = tossSaved
+    ? match.tossWinnerId === teamA._id
+      ? teamA
+      : teamB
+    : null;
+  const defaultBattingId =
+    tossSaved && tossWinnerTeam
+      ? match.tossDecision === "bat"
+        ? tossWinnerTeam._id
+        : tossWinnerTeam._id === teamA._id
+          ? teamB._id
+          : teamA._id
+      : "";
 
   // Only the tournament's organizers may score; everyone else is blocked
   // (mutations are also enforced server-side).
@@ -360,9 +380,18 @@ export default function Scorer() {
           />
         )}
 
-        {!superOverReady && needsStart && (
-          <StartInningsPanel matchId={match.id} teamA={teamA} teamB={teamB} />
-        )}
+        {!superOverReady && needsStart &&
+          (tossSaved ? (
+            <StartInningsPanel
+              matchId={match.id}
+              teamA={teamA}
+              teamB={teamB}
+              defaultBattingId={defaultBattingId}
+              tossNote={`${tossWinnerTeam?.name ?? ""} won the toss and chose to ${match.tossDecision} first`}
+            />
+          ) : (
+            <TossFlow matchId={match.id} teamA={teamA} teamB={teamB} />
+          ))}
 
         {needsOpeners && (
           <>
@@ -732,13 +761,17 @@ function StartInningsPanel({
   matchId,
   teamA,
   teamB,
+  defaultBattingId = "",
+  tossNote,
 }: {
   matchId: string;
   teamA: { _id: string; name: string; shortCode: string };
   teamB: { _id: string; name: string; shortCode: string };
+  defaultBattingId?: string;
+  tossNote?: string;
 }) {
   const startInnings = useMutation(api.scoring.startInnings);
-  const [battingId, setBattingId] = useState<string>("");
+  const [battingId, setBattingId] = useState<string>(defaultBattingId);
   const [striker, setStriker] = useState("");
   const [nonStriker, setNonStriker] = useState("");
   const [bowler, setBowler] = useState("");
@@ -772,6 +805,11 @@ function StartInningsPanel({
 
   return (
     <div className="border-2 border-[#22c55e] bg-card p-4 panel-glow">
+      {tossNote && (
+        <p className="mb-3 flex items-center gap-1.5 border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[#facc15]">
+          <Trophy className="size-3.5 shrink-0" /> {tossNote}
+        </p>
+      )}
       <MicroLabel className="text-[#22c55e]">Start innings</MicroLabel>
       <p className="mt-1 text-xs text-slate-500">
         Who bats first? Pick the opening pair and the first bowler.
