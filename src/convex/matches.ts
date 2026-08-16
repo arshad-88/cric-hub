@@ -201,6 +201,82 @@ export const setToss = mutation({
   },
 });
 
+/** Organizer: undo a completed toss (before the first ball) and redo it.
+ *  Clears the saved XIs too, so the whole ceremony restarts cleanly. */
+export const undoToss = mutation({
+  args: { matchId: v.id("matches") },
+  handler: async (ctx, { matchId }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
+    const innings = await ctx.db
+      .query("innings")
+      .withIndex("by_match", (q) => q.eq("matchId", matchId))
+      .collect();
+    if (innings.length > 0) {
+      throw new Error("The match has started — the toss can no longer be undone.");
+    }
+    await ctx.db.patch(matchId, {
+      tossWinnerId: undefined,
+      tossDecision: undefined,
+      teamAXI: undefined,
+      teamBXI: undefined,
+    });
+    return matchId;
+  },
+});
+
+/** Organizer: lock in the playing XI (exactly 11) for both teams after the
+ *  toss. The XI is what the scorer picks openers/bowlers/wicket replacements
+ *  from, and it's shown on the public match center. Also mirrors the picks
+ *  onto each player's isPlayingXI flag so team pages / profiles stay in sync. */
+export const setPlayingXI = mutation({
+  args: {
+    matchId: v.id("matches"),
+    teamAXI: v.array(v.id("players")),
+    teamBXI: v.array(v.id("players")),
+  },
+  handler: async (ctx, { matchId, teamAXI, teamBXI }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
+    if (teamAXI.length !== 11 || teamBXI.length !== 11) {
+      throw new Error("Pick exactly 11 players for each team.");
+    }
+    const check = async (ids: Id<"players">[], teamId: Id<"teams">) => {
+      for (const id of ids) {
+        const p = await ctx.db.get(id);
+        if (!p) throw new Error("A selected player no longer exists.");
+        if (p.teamId !== teamId) {
+          throw new Error(`${p.name} is not in this team's squad.`);
+        }
+      }
+    };
+    await check(teamAXI, match.teamAId);
+    await check(teamBXI, match.teamBId);
+
+    const squad = async (teamId: Id<"teams">) =>
+      ctx.db
+        .query("players")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .collect();
+    const [aAll, bAll] = await Promise.all([squad(match.teamAId), squad(match.teamBId)]);
+    const aSet = new Set(teamAXI.map((id) => String(id)));
+    const bSet = new Set(teamBXI.map((id) => String(id)));
+    for (const p of aAll) {
+      const inXI = aSet.has(String(p._id));
+      if (Boolean(p.isPlayingXI) !== inXI) await ctx.db.patch(p._id, { isPlayingXI: inXI });
+    }
+    for (const p of bAll) {
+      const inXI = bSet.has(String(p._id));
+      if (Boolean(p.isPlayingXI) !== inXI) await ctx.db.patch(p._id, { isPlayingXI: inXI });
+    }
+
+    await ctx.db.patch(matchId, { teamAXI, teamBXI });
+    return matchId;
+  },
+});
+
 /** Organizer: manually flip a match's status (e.g. abandon a fixture). */
 export const setStatus = mutation({
   args: { matchId: v.id("matches"), status: matchStatusValidator },

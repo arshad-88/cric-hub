@@ -515,6 +515,8 @@ export const get = query({
         result,
         tossWinnerId: match.tossWinnerId,
         tossDecision: match.tossDecision,
+        teamAXI: match.teamAXI ?? [],
+        teamBXI: match.teamBXI ?? [],
         currentInningsId: match.currentInningsId,
         superOver: match.superOver ?? false,
       },

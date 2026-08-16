@@ -197,6 +197,8 @@ const schema = defineSchema(
       status: matchStatusValidator,
       tossWinnerId: v.optional(v.id("teams")),
       tossDecision: v.optional(tossDecisionValidator),
+      teamAXI: v.optional(v.array(v.id("players"))), // scorer-picked playing XI (11) for team A
+      teamBXI: v.optional(v.array(v.id("players"))), // scorer-picked playing XI (11) for team B
       overs: v.number(), // overs per innings (T20 = 20)
       venue: v.optional(v.string()),
       stage: v.optional(matchStageValidator),

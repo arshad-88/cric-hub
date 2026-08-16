@@ -37,6 +37,7 @@ import {
   KeyRound,
   RotateCcw,
   Trophy,
+  Users,
   Video,
 } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -49,6 +50,11 @@ interface PlayerDoc {
   teamId: Id<"teams">;
   name: string;
   role: "Batsman" | "Bowler" | "All-rounder" | "Wicketkeeper";
+  battingStyle?: string;
+  bowlingStyle?: string;
+  jerseyNumber?: number;
+  isCaptain?: boolean;
+  isViceCaptain?: boolean;
 }
 
 const WICKET_TYPES: WicketType[] = ["Bowled", "Caught", "Run out", "Stumped", "LBW"];
@@ -106,6 +112,7 @@ export default function Scorer() {
   const setBowlerM = useMutation(api.scoring.setBowler);
   const setBatsmen = useMutation(api.scoring.setBatsmen);
   const updateStream = useMutation(api.matches.updateStreamUrl);
+  const undoToss = useMutation(api.matches.undoToss);
   const hub = useQuery(
     api.admin.hubStats,
     scorecard?.tournament.id
@@ -121,6 +128,7 @@ export default function Scorer() {
   const [streamOpen, setStreamOpen] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
   const [shotPending, setShotPending] = useState<number | null>(null);
+  const [xiEdit, setXiEdit] = useState(false);
   const events = useQuery(
     api.notifications.listForMatch,
     matchId ? { matchId: matchId as Id<"matches"> } : "skip",
@@ -146,6 +154,36 @@ export default function Scorer() {
   }
 
   const { match, teamA, teamB } = scorecard;
+
+  // Playing XI selection: after the toss the scorer locks in 11 players per
+  // team, and only those 11 can bat/bowl for the whole match. Matches without
+  // a saved XI (already-live / legacy games) fall back to the full squad.
+  const xiA = match.teamAXI ?? [];
+  const xiB = match.teamBXI ?? [];
+  const xiSaved = xiA.length === 11 && xiB.length === 11;
+  const xiOfTeam = (teamId: Id<"teams"> | undefined) =>
+    !teamId ? [] : teamId === teamA._id ? xiA : xiB;
+  const restrictToXI = (teamId: Id<"teams"> | undefined, squad: PlayerDoc[] | undefined) => {
+    const xi = xiOfTeam(teamId);
+    if (xi.length === 0) return squad ?? [];
+    const set = new Set(xi.map((id) => String(id)));
+    return (squad ?? []).filter((p) => set.has(String(p._id)));
+  };
+  const battingSquadXI = restrictToXI(battingTeamId, battingSquad);
+  const bowlingSquadXI = restrictToXI(bowlingTeamId, bowlingSquad);
+
+  const handleUndoToss = async () => {
+    setBusy(true);
+    try {
+      await undoToss({ matchId: match.id as Id<"matches"> });
+      setXiEdit(false);
+      toast.success("Toss undone — redo the ceremony.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not undo the toss.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // The toss drives the start-of-match flow: once a toss is saved the scorer
   // skips the ceremony and lands straight on "start innings" with the batting
@@ -382,20 +420,35 @@ export default function Scorer() {
 
         {!superOverReady && needsStart &&
           (tossSaved ? (
-            <StartInningsPanel
-              matchId={match.id}
-              teamA={teamA}
-              teamB={teamB}
-              defaultBattingId={defaultBattingId}
-              tossNote={`${tossWinnerTeam?.name ?? ""} won the toss and chose to ${match.tossDecision} first`}
-            />
+            xiSaved && !xiEdit ? (
+              <StartInningsPanel
+                matchId={match.id}
+                teamA={teamA}
+                teamB={teamB}
+                defaultBattingId={defaultBattingId}
+                tossNote={`${tossWinnerTeam?.name ?? ""} won the toss and chose to ${match.tossDecision} first`}
+                teamAXI={xiA}
+                teamBXI={xiB}
+                onEditXI={() => setXiEdit(true)}
+                onUndoToss={handleUndoToss}
+              />
+            ) : (
+              <PlayingXIPanel
+                matchId={match.id}
+                teamA={teamA}
+                teamB={teamB}
+                initialA={xiA}
+                initialB={xiB}
+                onUndoToss={handleUndoToss}
+              />
+            )
           ) : (
             <TossFlow matchId={match.id} teamA={teamA} teamB={teamB} />
           ))}
 
         {needsOpeners && (
           <>
-            <OpenersPanel inningsId={current.id} battingSquad={battingSquad ?? []} bowlingSquad={bowlingSquad ?? []} />
+            <OpenersPanel inningsId={current.id} battingSquad={battingSquadXI} bowlingSquad={bowlingSquadXI} />
             <button
               type="button"
               disabled={busy}
@@ -583,8 +636,8 @@ export default function Scorer() {
           strikerId={striker?._id ?? null}
           wicketsSoFar={current.wickets}
           superOver={current?.isSuperOver ?? false}
-          battingSquad={battingSquad ?? []}
-          bowlingSquad={bowlingSquad ?? []}
+          battingSquad={battingSquadXI}
+          bowlingSquad={bowlingSquadXI}
           onCancel={() => setWicketOpen(false)}
           onConfirm={async (payload) => {
             setBusy(true);
@@ -693,7 +746,7 @@ export default function Scorer() {
               <DialogDescription>Pick the bowler for the current over.</DialogDescription>
             </DialogHeader>
             <BowlerPicker
-              squad={bowlingSquad ?? []}
+              squad={bowlingSquadXI}
               currentId={bowler?._id}
               onPick={async (playerId) => {
                 setBusy(true);
@@ -763,12 +816,20 @@ function StartInningsPanel({
   teamB,
   defaultBattingId = "",
   tossNote,
+  teamAXI = [],
+  teamBXI = [],
+  onEditXI,
+  onUndoToss,
 }: {
   matchId: string;
   teamA: { _id: string; name: string; shortCode: string };
   teamB: { _id: string; name: string; shortCode: string };
   defaultBattingId?: string;
   tossNote?: string;
+  teamAXI?: string[];
+  teamBXI?: string[];
+  onEditXI?: () => void;
+  onUndoToss?: () => void;
 }) {
   const startInnings = useMutation(api.scoring.startInnings);
   const [battingId, setBattingId] = useState<string>(defaultBattingId);
@@ -793,6 +854,16 @@ function StartInningsPanel({
   const battingSquad = useQuery(api.players.listByTeam, battingId ? { teamId: battingId as Id<"teams"> } : "skip");
   const bowlingId = battingId ? (battingId === teamA._id ? teamB._id : teamA._id) : "";
   const bowlingSquad = useQuery(api.players.listByTeam, bowlingId ? { teamId: bowlingId as Id<"teams"> } : "skip");
+  // The scorer's pickers only list the locked-in XI of each team.
+  const xiFor = (teamId: string) => (teamId === teamA._id ? teamAXI : teamBXI);
+  const restrictToXI = (teamId: string, squad: PlayerDoc[] | undefined) => {
+    const xi = xiFor(teamId);
+    if (xi.length === 0) return squad ?? [];
+    const set = new Set(xi.map((id) => String(id)));
+    return (squad ?? []).filter((p) => set.has(String(p._id)));
+  };
+  const battingXI = restrictToXI(battingId, battingSquad);
+  const bowlingXI = restrictToXI(bowlingId, bowlingSquad);
 
   const submit = async () => {
     if (!battingId || !striker || !nonStriker || !bowler) {
@@ -837,13 +908,32 @@ function StartInningsPanel({
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
             {lockedBowlingTeam.name} bowl first — decided by the toss
           </p>
-          <button
-            type="button"
-            onClick={() => setOverrideToss(true)}
-            className="flex w-full items-center justify-center gap-1 border border-border bg-card py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:border-[#facc15] hover:text-[#facc15]"
-          >
-            <RotateCcw className="size-3" /> Override toss (scorer error)
-          </button>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setOverrideToss(true)}
+              className="flex items-center justify-center gap-1 border border-border bg-card py-2 text-[8px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:border-[#facc15] hover:text-[#facc15]"
+            >
+              <RotateCcw className="size-2.5" /> Override
+            </button>
+            <button
+              type="button"
+              onClick={onEditXI}
+              className="flex items-center justify-center gap-1 border border-border bg-card py-2 text-[8px] font-bold uppercase tracking-widest text-slate-400 transition-colors hover:border-[#22d3ee] hover:text-[#22d3ee]"
+            >
+              <Users className="size-2.5" /> Change XI
+            </button>
+            <button
+              type="button"
+              onClick={onUndoToss}
+              className="flex items-center justify-center gap-1 border border-[#ef4444]/40 bg-card py-2 text-[8px] font-bold uppercase tracking-widest text-[#ef4444] transition-colors hover:border-[#ef4444] hover:bg-[#ef4444]/10"
+            >
+              <RotateCcw className="size-2.5" /> Undo toss
+            </button>
+          </div>
+          <p className="text-center text-[8px] font-bold uppercase tracking-widest text-slate-600">
+            Override = change batting side · Change XI = re-pick teams · Undo toss = redo the ceremony
+          </p>
         </div>
       ) : (
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -872,10 +962,10 @@ function StartInningsPanel({
       {battingId && (
         <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-2">
-            <Picker label="Striker" value={striker} onChange={setStriker} players={battingSquad ?? []} />
-            <Picker label="Non-striker" value={nonStriker} onChange={setNonStriker} players={battingSquad ?? []} />
+            <Picker label="Striker" value={striker} onChange={setStriker} players={battingXI} />
+            <Picker label="Non-striker" value={nonStriker} onChange={setNonStriker} players={battingXI} />
           </div>
-          <Picker label="First bowler" value={bowler} onChange={setBowler} players={bowlingSquad ?? []} />
+          <Picker label="First bowler" value={bowler} onChange={setBowler} players={bowlingXI} />
           <Button
             type="button"
             onClick={submit}
@@ -886,6 +976,184 @@ function StartInningsPanel({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** After the toss: the scorer picks the playing XI (exactly 11) of both teams
+ *  before any innings can start. Only these players can bat/bowl, and the XI
+ *  is what viewers see on the public match center. */
+function PlayingXIPanel({
+  matchId,
+  teamA,
+  teamB,
+  initialA = [],
+  initialB = [],
+  onUndoToss,
+}: {
+  matchId: string;
+  teamA: { _id: string; name: string; shortCode: string; color: string };
+  teamB: { _id: string; name: string; shortCode: string; color: string };
+  initialA?: string[];
+  initialB?: string[];
+  onUndoToss?: () => void;
+}) {
+  const teamASquad = useQuery(api.players.listByTeam, { teamId: teamA._id as Id<"teams"> });
+  const teamBSquad = useQuery(api.players.listByTeam, { teamId: teamB._id as Id<"teams"> });
+  const setPlayingXI = useMutation(api.matches.setPlayingXI);
+  const [selA, setSelA] = useState<string[]>(initialA);
+  const [selB, setSelB] = useState<string[]>(initialB);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (prev: string[], id: string): string[] =>
+    prev.includes(id)
+      ? prev.filter((x) => x !== id)
+      : prev.length >= 11
+        ? prev
+        : [...prev, id];
+
+  const lock = async () => {
+    if (selA.length !== 11 || selB.length !== 11) {
+      toast.error("Pick exactly 11 players for each team.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await setPlayingXI({
+        matchId: matchId as Id<"matches">,
+        teamAXI: selA as Id<"players">[],
+        teamBXI: selB as Id<"players">[],
+      });
+      toast.success("Playing XIs locked — set the crease to start.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save the XIs.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-2 border-[#22d3ee] bg-card p-4 panel-glow">
+      <div className="flex items-center gap-2">
+        <Users className="size-4 text-[#22d3ee]" />
+        <MicroLabel className="text-[#22d3ee]">Pick the playing XI</MicroLabel>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+        Toss done — now pick 11 players for each team. Only these 11 can bat
+        and bowl, so get both XIs right before the first ball.
+      </p>
+
+      <div className="mt-4 space-y-4">
+        <XISelect
+          team={teamA}
+          squad={teamASquad ?? []}
+          selected={selA}
+          onToggle={(id) => setSelA((prev) => toggle(prev, id))}
+        />
+        <XISelect
+          team={teamB}
+          squad={teamBSquad ?? []}
+          selected={selB}
+          onToggle={(id) => setSelB((prev) => toggle(prev, id))}
+        />
+      </div>
+
+      <Button
+        type="button"
+        onClick={lock}
+        disabled={busy || selA.length !== 11 || selB.length !== 11}
+        className="mt-4 w-full rounded-none bg-[#22c55e] py-4 text-xs font-black uppercase tracking-widest text-[#052e16] hover:bg-[#facc15] hover:text-[#422006]"
+      >
+        <Check className="size-4" />
+        {selA.length === 11 && selB.length === 11
+          ? "Lock XIs & continue"
+          : `Pick ${11 - selA.length} more for ${teamA.shortCode} · ${11 - selB.length} more for ${teamB.shortCode}`}
+      </Button>
+      {onUndoToss && (
+        <button
+          type="button"
+          onClick={onUndoToss}
+          className="mt-2 flex w-full items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#ef4444]"
+        >
+          <RotateCcw className="size-3" /> Undo toss &amp; redo the ceremony
+        </button>
+      )}
+    </div>
+  );
+}
+
+function XISelect({
+  team,
+  squad,
+  selected,
+  onToggle,
+}: {
+  team: { _id: string; name: string; shortCode: string; color: string };
+  squad: PlayerDoc[];
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="border border-border bg-panel">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+        <span
+          className="flex size-7 items-center justify-center text-[10px] font-black text-white"
+          style={{ backgroundColor: team.color }}
+        >
+          {team.shortCode}
+        </span>
+        <span className="truncate text-xs font-extrabold uppercase tracking-tight text-white">{team.name}</span>
+        <span
+          className={cn(
+            "ml-auto text-[10px] font-black uppercase tracking-widest",
+            selected.length === 11 ? "text-[#22c55e]" : "text-[#facc15]",
+          )}
+        >
+          {selected.length}/11
+        </span>
+      </div>
+      <ul className="max-h-72 divide-y divide-border/60 overflow-y-auto">
+        {squad.map((p) => {
+          const on = selected.includes(String(p._id));
+          return (
+            <li key={p._id}>
+              <button
+                type="button"
+                onClick={() => onToggle(String(p._id))}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+                  on ? "bg-[#22c55e]/10" : "hover:bg-panel-2",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex size-5 shrink-0 items-center justify-center border",
+                    on ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]" : "border-border bg-card text-transparent",
+                  )}
+                >
+                  <Check className="size-3" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-bold text-slate-100">{p.name}</span>
+                  <span className="block truncate text-[9px] uppercase tracking-wider text-slate-500">
+                    {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || "Bats & bowls"}
+                  </span>
+                </span>
+                {(p.isCaptain || p.isViceCaptain) && (
+                  <span
+                    className={cn(
+                      "shrink-0 text-[8px] font-black uppercase tracking-widest",
+                      p.isCaptain ? "text-[#facc15]" : "text-[#22d3ee]",
+                    )}
+                  >
+                    {p.isCaptain ? "C" : "VC"}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

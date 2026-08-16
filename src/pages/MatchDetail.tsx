@@ -322,8 +322,20 @@ export default function MatchDetail() {
 
           {tab === "xi" && (
             <div className="grid gap-6 lg:grid-cols-2">
-              <XIPanel name={teamA.name} shortCode={teamA.shortCode} color={teamA.color} squad={teamASquad ?? []} />
-              <XIPanel name={teamB.name} shortCode={teamB.shortCode} color={teamB.color} squad={teamBSquad ?? []} />
+              <XIPanel
+                name={teamA.name}
+                shortCode={teamA.shortCode}
+                color={teamA.color}
+                squad={teamASquad ?? []}
+                xi={match.teamAXI}
+              />
+              <XIPanel
+                name={teamB.name}
+                shortCode={teamB.shortCode}
+                color={teamB.color}
+                squad={teamBSquad ?? []}
+                xi={match.teamBXI}
+              />
             </div>
           )}
 
@@ -436,12 +448,18 @@ function XIPanel({
   shortCode,
   color,
   squad,
+  xi,
 }: {
   name: string;
   shortCode: string;
   color: string;
   squad: { _id: string; name: string; role: string; battingStyle?: string; bowlingStyle?: string; jerseyNumber?: number }[];
+  xi?: string[];
 }) {
+  // When the scorer has locked in the match XI, only those 11 are shown;
+  // otherwise the full squad is listed (matches without a saved XI).
+  const inXI = xi && xi.length > 0 ? new Set(xi.map((id) => String(id))) : null;
+  const rows = inXI ? squad.filter((p) => inXI.has(String(p._id))) : squad;
   return (
     <div className="border border-border bg-card panel-glow">
       <div className="flex items-center gap-2.5 border-b border-border bg-panel px-3 py-2.5">
@@ -449,10 +467,12 @@ function XIPanel({
         <span className="truncate text-sm font-extrabold uppercase tracking-tight text-white">
           {name}
         </span>
-        <span className="micro-label ml-auto text-slate-500">XI · {squad.length}</span>
+        <span className="micro-label ml-auto text-slate-500">
+          {inXI ? `XI · ${rows.length}` : `Squad · ${squad.length}`}
+        </span>
       </div>
       <ul className="divide-y divide-border/60">
-        {squad.map((p) => (
+        {rows.map((p) => (
           <li key={p._id} className="flex items-center gap-3 px-3 py-2">
             <span className="score-nums w-6 shrink-0 text-center text-[10px] font-black text-slate-500">
               {p.jerseyNumber ?? "—"}
@@ -467,9 +487,9 @@ function XIPanel({
             </span>
           </li>
         ))}
-        {squad.length === 0 && (
+        {rows.length === 0 && (
           <li className="px-3 py-8 text-center text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            Squad not registered yet
+            {inXI ? "Playing XI not announced yet" : "Squad not registered yet"}
           </li>
         )}
       </ul>
