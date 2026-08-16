@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 
 export type ScorePopupKind =
@@ -121,7 +121,7 @@ export function useScorePopups(
     [],
   );
 
-  const push = (p: Omit<ScorePopup, "id">) => {
+  const push = useCallback((p: Omit<ScorePopup, "id">) => {
     const id = ++idRef.current;
     setPopups((prev) => [...prev.slice(-2), { ...p, id }]);
     const timer = setTimeout(() => {
@@ -129,12 +129,15 @@ export function useScorePopups(
       timers.current.delete(id);
     }, POPUP_MS);
     timers.current.set(id, timer);
-  };
+  }, []);
 
   // ---- backend events: wicket / milestones / team milestones / innings / result
   useEffect(() => {
     if (!events) return;
     if (seenEvents.current === null) {
+      // Wait for the query to hydrate — seeding with an empty list would let
+      // every pre-existing event replay as a popup when the page is revisited.
+      if (events.length === 0) return;
       seenEvents.current = new Set(events.map((e) => e.id));
       return;
     }
@@ -174,6 +177,9 @@ export function useScorePopups(
     const latest = balls[0];
     if (!latest) return;
     if (seenBalls.current === null) {
+      // Same hydration guard as events: only seed once real balls exist so
+      // existing deliveries don't fire as popups on remount.
+      if (balls.length === 0) return;
       seenBalls.current = new Set(balls.map((b) => b.key));
       return;
     }

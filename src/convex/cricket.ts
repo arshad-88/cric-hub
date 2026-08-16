@@ -223,6 +223,15 @@ const DEFENCE_LINES = [
   "{batsman} pushes it to cover. Dot ball.",
 ];
 
+/** Fill {batsman} / {bowler} placeholders inside a picked commentary line. */
+function fillTpl(line: string, names: CommentaryNames): string {
+  return line
+    .replace(/\{batsman\}/g, names.batsman)
+    .replace(/\{bowler\}/g, names.bowler)
+    .replace(/\{dismissed\}/g, names.dismissed ?? names.batsman)
+    .replace(/\{fielder\}/g, names.fielder ?? "the fielder");
+}
+
 /**
  * Broadcast-style ball commentary. Templates vary per event and insert the
  * over/ball, batter, bowler, runs, score, target and partnership context.
@@ -267,7 +276,7 @@ export function buildCommentary(
       : pick(WICKET_LINES, seed + d.overNumber);
     const hat = ctx?.isHatTrickBall ? "Two down in two — the hat-trick is on!" : "";
     const parts = [`OUT! ${victim} ${how}.`];
-    if (flair) parts.push(flair);
+    if (flair) parts.push(fillTpl(flair, names));
     if (hat) parts.push(hat);
     if (score) parts.push(`${score} now.`);
     return parts.join(" ");
@@ -290,20 +299,20 @@ export function buildCommentary(
   }
   if (d.runsScored === 0) {
     const dots = ctx?.dotsBefore ? ` ${ctx.dotsBefore + 1} dots on the trot` : "";
-    return `${over} — ${pick(DEFENCE_LINES, seed)}${dots}.`;
+    return `${over} — ${fillTpl(pick(DEFENCE_LINES, seed), names)}${dots}.`;
   }
   if (d.runsScored === 4) {
     const chaseCtx =
       ctx?.target != null && ctx?.teamRuns != null && ctx?.ballsLeft != null
         ? { target: ctx.target, teamRuns: ctx.teamRuns, ballsLeft: ctx.ballsLeft }
         : null;
-    const line = `${over} — FOUR! ${pick(FOUR_LINES, seed)}`;
+    const line = `${over} — FOUR! ${fillTpl(pick(FOUR_LINES, seed), names)}`;
     return chaseCtx && chaseCtx.teamRuns + 4 >= chaseCtx.target * 0.75
       ? `${line} ${pick(CHASE_LINES, seed)}`
       : line;
   }
   if (d.runsScored === 6) {
-    return `${over} — ${pick(SIX_OPENERS, seed)} ${pick(SIX_LINES, seed)}`;
+    return `${over} — ${pick(SIX_OPENERS, seed)} ${fillTpl(pick(SIX_LINES, seed), names)}`;
   }
   if (d.runsScored === 3) {
     return `${over} — ${names.batsman} opens the face and they run hard — three!`;
