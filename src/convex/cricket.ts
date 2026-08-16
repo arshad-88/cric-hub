@@ -868,6 +868,8 @@ export function matchPrediction(input: {
   battingTeamName: string | null;
   /** Resolved winner team id once the match is decided (incl. super over). */
   winnerTeamId?: string | null;
+  /** Overs per innings — drives projected totals / balls remaining. */
+  totalOvers?: number;
   in1?: { totalRuns: number; wickets: number; ballsBowled: number } | null;
   in2?: {
     totalRuns: number;
@@ -917,6 +919,8 @@ export function matchPrediction(input: {
   const in1 = input.in1;
   const in2 = input.in2;
   const battingName = input.battingTeamName;
+  const totalOvers = Math.max(1, input.totalOvers ?? 20);
+  const totalBalls = totalOvers * 6;
 
   // Chase (in progress or about to start) → DLS par margin drives the model.
   if (in2 && in2.target != null && battingName) {
@@ -932,7 +936,7 @@ export function matchPrediction(input: {
     }
     const margin = in2.totalRuns - input.dlsPar;
     const pChase = clamp(sigmoid(0.07 * margin), 0.05, 0.95);
-    const ballsLeft = Math.max(0, 120 - in2.ballsBowled);
+    const ballsLeft = Math.max(0, totalBalls - in2.ballsBowled);
     const need = Math.max(0, in2.target - in2.totalRuns);
     const summary =
       need === 0
@@ -946,7 +950,7 @@ export function matchPrediction(input: {
 
   // First innings in progress → projected total vs league average.
   if (in1 && battingName) {
-    const ballsLeft = Math.max(0, 120 - in1.ballsBowled);
+    const ballsLeft = Math.max(0, totalBalls - in1.ballsBowled);
     const crr = in1.ballsBowled > 0 ? (in1.totalRuns / in1.ballsBowled) * 6 : 0;
     const projected = Math.round(in1.totalRuns + (crr * ballsLeft) / 6);
     const avg = input.avgFirstInnings;

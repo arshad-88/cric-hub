@@ -475,6 +475,7 @@ export const get = query({
       teamAName: teamA.name,
       teamBName: teamB.name,
       battingTeamName: currentInnings?.battingTeam.name ?? null,
+      totalOvers: match.overs,
       winnerTeamId:
         winnerTeamId === null
           ? null
