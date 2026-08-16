@@ -415,11 +415,18 @@ export const placeBid = mutation({
 
 /** Shared core: sell to the highest bidder or send unsold (no auth). Throws
  *  on constraint violations so the public mutation can surface them, while the
- *  auto-pilot tick catches and falls back to UNSOLD instead of wedging. */
+ *  auto-pilot tick catches and falls back to UNSOLD instead of wedging.
+ *
+ *  Rules:
+ *   • SOLD requires a bidder on the table (SOLD button is disabled otherwise).
+ *   • UNSOLD is only allowed when NO team has bid — once a bid is in, the
+ *     player must go SOLD. The auto-pilot tick may pass `forceUnsold` when a
+ *     constraint (squad full / purse) blocks the sale of an already-bid player. */
 async function finishPlayerCore(
   ctx: MutationCtx,
   auctionId: Id<"auctions">,
   sold: boolean,
+  forceUnsold = false,
 ): Promise<{ completed: boolean; sold: boolean }> {
   const auction = await ctx.db.get(auctionId);
   if (!auction) throw new Error("Room not found.");
@@ -428,6 +435,14 @@ async function finishPlayerCore(
   }
   const player = auction.pool[auction.currentIndex];
   const bidderTeamId = auction.currentBidderTeamId;
+
+  // UNSOLD is only legitimate when nobody bid. A bid on the table must go
+  // SOLD (or the auto-pilot overrides via forceUnsold for constraint blocks).
+  if (!sold && bidderTeamId != null && !forceUnsold) {
+    throw new Error(
+      "A bid is on the table — sell to the highest bidder instead.",
+    );
+  }
 
   if (sold && bidderTeamId) {
     const bidder = await ctx.db.get(bidderTeamId);
@@ -542,8 +557,9 @@ export const tickAutoPilot = internalMutation({
       try {
         await finishPlayerCore(ctx, auctionId, !!auction.currentBidderTeamId);
       } catch {
-        // Constraint failure (squad full / purse) — send the player unsold.
-        await finishPlayerCore(ctx, auctionId, false).catch(() => {});
+        // Constraint failure (squad full / purse) — force the player unsold
+        // even though a bid is on the table (the auto-pilot's last resort).
+        await finishPlayerCore(ctx, auctionId, false, true).catch(() => {});
       }
       const after = await ctx.db.get(auctionId);
       if (

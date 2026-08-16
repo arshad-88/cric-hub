@@ -129,6 +129,97 @@ export const create = mutation({
   },
 });
 
+/** Organizer-only: fix mistyped tournament details. */
+export const update = mutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    name: v.optional(v.string()),
+    year: v.optional(v.number()),
+    description: v.optional(v.string()),
+    city: v.optional(v.string()),
+    ballType: v.optional(ballTypeValidator),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    bannerUrl: v.optional(v.string()),
+    defaultOvers: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { tournament } = await requireOrganizer(ctx, args.tournamentId);
+    await ctx.db.patch(args.tournamentId, {
+      name: args.name ?? tournament.name,
+      year: args.year ?? tournament.year,
+      description: args.description !== undefined ? args.description : tournament.description,
+      city: args.city !== undefined ? args.city : tournament.city,
+      ballType: args.ballType !== undefined ? args.ballType : tournament.ballType,
+      startDate: args.startDate !== undefined ? args.startDate : tournament.startDate,
+      endDate: args.endDate !== undefined ? args.endDate : tournament.endDate,
+      bannerUrl: args.bannerUrl !== undefined ? args.bannerUrl : tournament.bannerUrl,
+      defaultOvers: args.defaultOvers !== undefined ? args.defaultOvers : tournament.defaultOvers,
+    });
+    return args.tournamentId;
+  },
+});
+
+/**
+ * Organizer-only: permanently delete a tournament and its entire history —
+ * teams, players, fixtures, every innings and ball-by-ball delivery, the
+ * event feed and follows. This cannot be undone; the frontend asks for a
+ * typed confirmation before calling it.
+ */
+export const remove = mutation({
+  args: { tournamentId: v.id("tournaments") },
+  handler: async (ctx, { tournamentId }) => {
+    await requireOrganizer(ctx, tournamentId);
+
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournamentId))
+      .collect();
+    const matches = await ctx.db
+      .query("matches")
+      .withIndex("by_tournament_status", (q) => q.eq("tournamentId", tournamentId))
+      .collect();
+
+    // Players (per team)
+    for (const team of teams) {
+      const squad = await ctx.db
+        .query("players")
+        .withIndex("by_team", (q) => q.eq("teamId", team._id))
+        .collect();
+      for (const p of squad) await ctx.db.delete(p._id);
+    }
+
+    // Match-scoped rows, then the matches themselves
+    for (const m of matches) {
+      const deliveries = await ctx.db
+        .query("deliveries")
+        .withIndex("by_match", (q) => q.eq("matchId", m._id))
+        .collect();
+      for (const d of deliveries) await ctx.db.delete(d._id);
+      const innings = await ctx.db
+        .query("innings")
+        .withIndex("by_match", (q) => q.eq("matchId", m._id))
+        .collect();
+      for (const inn of innings) await ctx.db.delete(inn._id);
+      const events = await ctx.db
+        .query("matchEvents")
+        .withIndex("by_match", (q) => q.eq("matchId", m._id))
+        .collect();
+      for (const e of events) await ctx.db.delete(e._id);
+      const follows = await ctx.db
+        .query("matchFollows")
+        .withIndex("by_match", (q) => q.eq("matchId", m._id))
+        .collect();
+      for (const f of follows) await ctx.db.delete(f._id);
+      await ctx.db.delete(m._id);
+    }
+
+    for (const team of teams) await ctx.db.delete(team._id);
+    await ctx.db.delete(tournamentId);
+    return tournamentId;
+  },
+});
+
 /** Organizer-only: mark a tournament as the featured one. */
 export const setActive = mutation({
   args: { tournamentId: v.id("tournaments") },

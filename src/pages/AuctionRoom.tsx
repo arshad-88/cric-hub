@@ -1,10 +1,18 @@
 import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { BallChip, MicroLabel } from "@/components/swiss";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
@@ -185,6 +193,42 @@ export default function AuctionRoom() {
   const isHost = !!user && room?.hostId === user._id;
   const myTeam = room?.teams.find((t) => t.ownerId === user?._id) ?? null;
 
+  // Sold / unsold result popup — fires whenever soldCount moves forward so
+  // every phone in the room sees who went where and for how much.
+  const [lastSale, setLastSale] = useState<{
+    player: PoolPlayerView;
+    sold: boolean;
+    team?: { name: string; color: string };
+    price: number;
+  } | null>(null);
+  const prevSold = useRef<number | null>(null);
+  useEffect(() => {
+    if (!room) return;
+    if (prevSold.current === null) {
+      prevSold.current = room.soldCount;
+      return;
+    }
+    if (room.soldCount > prevSold.current) {
+      const player = room.pool[room.soldCount - 1];
+      if (player) {
+        let sold = false;
+        let team: { name: string; color: string } | undefined;
+        let price = player.basePrice;
+        for (const t of room.teams) {
+          const hit = t.sold.find((s) => s.playerKey === player.key);
+          if (hit) {
+            sold = true;
+            team = { name: t.name, color: t.color };
+            price = hit.price;
+            break;
+          }
+        }
+        setLastSale({ player, sold, team, price });
+      }
+    }
+    prevSold.current = room.soldCount;
+  }, [room]);
+
   if (room === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -314,7 +358,89 @@ export default function AuctionRoom() {
         {/* results */}
         {room.status === "COMPLETED" && <Results room={room} />}
       </main>
+
+      {/* sold / unsold result popup — every phone in the room sees it */}
+      {lastSale && <ResultPopup sale={lastSale} onClose={() => setLastSale(null)} />}
+
       <SiteFooter />
+    </div>
+  );
+}
+
+function ResultPopup({
+  sale,
+  onClose,
+}: {
+  sale: {
+    player: PoolPlayerView;
+    sold: boolean;
+    team?: { name: string; color: string };
+    price: number;
+  };
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm border bg-card shadow-2xl"
+        style={{
+          borderColor: sale.sold ? "#22c55e" : "#ef4444",
+          animation: "pop-in 0.25s ease-out",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex items-center justify-between px-4 py-3"
+          style={{ backgroundColor: sale.sold ? "#052e16" : "#450a0a" }}
+        >
+          <span
+            className="text-[10px] font-black uppercase tracking-widest"
+            style={{ color: sale.sold ? "#22c55e" : "#ef4444" }}
+          >
+            {sale.sold ? "Sold!" : "Unsold"}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-white"
+          >
+            Close ✕
+          </button>
+        </div>
+        <div className="flex items-center gap-4 p-5">
+          <PlayerPhoto
+            name={sale.player.name}
+            wiki={sale.player.wiki}
+            photoUrl={sale.player.photoUrl}
+            className="size-20 rounded-full border-2"
+            textClass="text-3xl"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xl font-black uppercase tracking-tight text-white">
+              {sale.player.name}
+            </p>
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              {sale.player.role} · base {inr(sale.player.basePrice)}
+            </p>
+            {sale.sold && sale.team ? (
+              <p
+                className="mt-2 text-sm font-black uppercase tracking-wide"
+                style={{ color: sale.team.color }}
+              >
+                {sale.team.name}
+                <span className="score-nums ml-2 text-[#facc15]">{inr(sale.price)}</span>
+              </p>
+            ) : (
+              <p className="mt-2 text-xs font-bold uppercase tracking-widest text-[#ef4444]">
+                No bids — back to the pool
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -700,13 +826,19 @@ function LiveBlock({
                 <button
                   type="button"
                   onClick={() => doFinish(false)}
-                  className="bg-[#ef4444] py-3 text-[10px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#7f1d1d]"
+                  disabled={!!room.currentBidderTeamId}
+                  title={
+                    room.currentBidderTeamId
+                      ? "A bid is on the table — sell to the highest bidder instead"
+                      : "Unsold only works when nobody has bid"
+                  }
+                  className="bg-[#ef4444] py-3 text-[10px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#7f1d1d] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Unsold
                 </button>
               </div>
               <p className="text-center text-[9px] uppercase tracking-widest text-slate-600">
-                Auctioneer only — sells to the current highest bidder
+                Auctioneer only — SOLD sells to the highest bidder · Unsold only when no bid
               </p>
             </div>
           )}

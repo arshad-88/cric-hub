@@ -64,7 +64,7 @@ export default function Auction() {
             </div>
             <div className="flex items-center gap-6">
               <StatMini value={(rooms ?? []).length} label="Rooms open" />
-              <StatMini value="70+" label="IPL stars" />
+              <StatMini value="150+" label="IPL 2026 stars" />
               <StatMini value="6-digit" label="Join codes" />
             </div>
           </div>
@@ -228,7 +228,7 @@ function CreateCard({
       <div className="flex flex-1 flex-col gap-3 p-4">
         <p className="text-[11px] leading-relaxed text-slate-400">
           {isIpl
-            ? "70+ real IPL stars with career + recent-form stats and player photos. Multiplayer, auction11-style."
+            ? "150+ real IPL 2026 players — every franchise's squad plus the marquee names back in the pool — with career + recent-form stats and player photos. Multiplayer, auction11-style."
             : "Every player from a tournament you organize — their career stats from all leagues come along automatically."}
         </p>
         <Field label="Room title (optional)">

@@ -423,8 +423,18 @@ export default function Scorer() {
               </button>
             </div>
 
+            {/* how to score — keep it obvious, even mid-argument */}
+            <div className="mt-4 border border-[#22d3ee]/30 bg-[#083344]/40 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-[#22d3ee]">
+                How to score — tap the runs the batter ran · 4s &amp; 6s are green · W = Wicket · WD = Wide ball · NB = No ball · BYE / LB = runs without the bat
+              </p>
+              <p className="mt-0.5 text-[8px] font-bold uppercase tracking-widest text-slate-500">
+                Made a mistake? Tap Undo — it removes the last ball, nothing is permanent
+              </p>
+            </div>
+
             {/* keypad */}
-            <div className="mt-4 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-4 gap-2">
               {[0, 1, 2, 3, 4, 6].map((r) => (
                 <button
                   key={r}
@@ -445,41 +455,46 @@ export default function Scorer() {
                 type="button"
                 disabled={busy || currentOver}
                 onClick={() => setWicketOpen(true)}
-                className="score-nums bg-[#ef4444] py-5 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-col items-center justify-center gap-1 bg-[#ef4444] py-4 text-2xl font-extrabold text-white transition-transform active:scale-95 glow-red hover:bg-[#dc2626] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                W
+                <span>W</span>
+                <span className="text-[8px] font-black uppercase tracking-widest">Wicket</span>
               </button>
               <button
                 type="button"
                 disabled={busy || currentOver}
                 onClick={() => setExtraOpen("wide")}
-                className="border-2 border-[#facc15] bg-[#422006] text-sm font-extrabold text-[#facc15] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-col items-center justify-center gap-1 border-2 border-[#facc15] bg-[#422006] py-4 text-sm font-extrabold text-[#facc15] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                WD
+                <span>WD</span>
+                <span className="text-[7px] font-black uppercase tracking-widest">Wide ball</span>
               </button>
               <button
                 type="button"
                 disabled={busy || currentOver}
                 onClick={() => setExtraOpen("noball")}
-                className="border-2 border-[#22d3ee] bg-[#083344] text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-col items-center justify-center gap-1 border-2 border-[#22d3ee] bg-[#083344] py-4 text-sm font-extrabold text-[#22d3ee] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                NB
+                <span>NB</span>
+                <span className="text-[7px] font-black uppercase tracking-widest">No ball</span>
               </button>
               <button
                 type="button"
                 disabled={busy || currentOver}
                 onClick={() => setExtraOpen("bye")}
-                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-col items-center justify-center gap-1 border border-border bg-card py-4 text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                BYE
+                <span>BYE</span>
+                <span className="text-[7px] font-black uppercase tracking-widest">Byes</span>
               </button>
               <button
                 type="button"
                 disabled={busy || currentOver}
                 onClick={() => setExtraOpen("legbye")}
-                className="border border-border bg-card text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-col items-center justify-center gap-1 border border-border bg-card py-4 text-sm font-extrabold text-slate-300 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                LB
+                <span>LB</span>
+                <span className="text-[7px] font-black uppercase tracking-widest">Leg bye</span>
               </button>
               <button
                 type="button"

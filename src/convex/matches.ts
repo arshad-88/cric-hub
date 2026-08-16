@@ -149,6 +149,31 @@ export const create = mutation({
   },
 });
 
+/** Organizer: fix mistyped fixture details (overs, venue, stage, time, stream). */
+export const update = mutation({
+  args: {
+    matchId: v.id("matches"),
+    overs: v.optional(v.number()),
+    venue: v.optional(v.string()),
+    stage: v.optional(matchStageValidator),
+    startTime: v.optional(v.number()),
+    streamUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get(args.matchId);
+    if (!match) throw new Error("Match not found.");
+    await requireOrganizer(ctx, match.tournamentId);
+    await ctx.db.patch(args.matchId, {
+      overs: args.overs ?? match.overs,
+      venue: args.venue !== undefined ? args.venue : match.venue,
+      stage: args.stage !== undefined ? args.stage : match.stage,
+      startTime: args.startTime ?? match.startTime,
+      streamUrl: args.streamUrl !== undefined ? args.streamUrl : match.streamUrl,
+    });
+    return args.matchId;
+  },
+});
+
 /** Organizer: paste/update the YouTube or Twitch stream URL at any point. */
 export const updateStreamUrl = mutation({
   args: { matchId: v.id("matches"), streamUrl: v.string() },

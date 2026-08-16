@@ -18,6 +18,7 @@ const FILTERS: { key: "ALL" | MatchStatus; label: string }[] = [
 ];
 
 export default function Matches() {
+  // test {
   const [searchParams] = useSearchParams();
   const tournamentParam = searchParams.get("tournament");
   const [filter, setFilter] = useState<"ALL" | MatchStatus>("ALL");

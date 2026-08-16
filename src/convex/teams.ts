@@ -183,6 +183,33 @@ export const getDetail = query({
   },
 });
 
+/** Organizer: fix mistyped team details (name, code, colors, coach). */
+export const update = mutation({
+  args: {
+    teamId: v.id("teams"),
+    name: v.optional(v.string()),
+    shortCode: v.optional(v.string()),
+    color: v.optional(v.string()),
+    logoUrl: v.optional(v.string()),
+    coach: v.optional(v.string()),
+    captainId: v.optional(v.id("players")),
+  },
+  handler: async (ctx, args) => {
+    const team = await ctx.db.get(args.teamId);
+    if (!team) throw new Error("Team not found.");
+    await requireOrganizer(ctx, team.tournamentId);
+    await ctx.db.patch(args.teamId, {
+      name: args.name ?? team.name,
+      shortCode: args.shortCode ? args.shortCode.toUpperCase().slice(0, 4) : team.shortCode,
+      color: args.color ?? team.color,
+      logoUrl: args.logoUrl !== undefined ? args.logoUrl : team.logoUrl,
+      coach: args.coach !== undefined ? args.coach : team.coach,
+      captainId: args.captainId !== undefined ? args.captainId : team.captainId,
+    });
+    return args.teamId;
+  },
+});
+
 /** Organizer: create a team under a specific tournament. */
 export const create = mutation({
   args: {
