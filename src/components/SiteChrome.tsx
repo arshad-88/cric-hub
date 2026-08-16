@@ -91,7 +91,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggle />
           <SoundToggle />
           <NotificationBell />
@@ -103,7 +103,7 @@ export function SiteHeader() {
                 </span>
                 <Link
                   to="/dashboard"
-                  className="inline-flex items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                  className="hidden items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006] sm:inline-flex"
                 >
                   <Plus className="size-3.5" />
                   My Hub
@@ -114,14 +114,14 @@ export function SiteHeader() {
                 <button
                   type="button"
                   onClick={() => navigate("/auth")}
-                  className="inline-flex items-center gap-1.5 border border-border bg-card px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 transition-colors hover:border-[#22c55e] hover:text-white"
+                  className="inline-flex items-center gap-1.5 border border-border bg-card px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300 transition-colors hover:border-[#22c55e] hover:text-white sm:px-3"
                 >
                   <LogIn className="size-3.5" />
-                  Sign in
+                  <span className="hidden sm:inline">Sign in</span>
                 </button>
                 <Link
                   to="/auth"
-                  className="inline-flex items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006]"
+                  className="hidden items-center gap-1.5 bg-[#22c55e] px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#052e16] transition-colors hover:bg-[#facc15] hover:text-[#422006] sm:inline-flex"
                 >
                   <Plus className="size-3.5" />
                   Start a tournament

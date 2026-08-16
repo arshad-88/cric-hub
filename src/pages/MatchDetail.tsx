@@ -156,10 +156,10 @@ export default function MatchDetail() {
             </div>
           </div>
 
-          <div className="stadium-gradient mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border border-border px-4 py-6 panel-glow">
+          <div className="stadium-gradient mt-4 grid gap-4 border border-border px-4 py-5 panel-glow sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-3 sm:px-6 sm:py-6">
             <div className="flex items-center gap-3">
               <TeamMark shortCode={teamA.shortCode} color={teamA.color} size="lg" />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-lg font-black uppercase tracking-tight text-white">
                   {teamA.name}
                 </p>
@@ -173,11 +173,11 @@ export default function MatchDetail() {
                 )}
               </div>
             </div>
-            <div className="text-center">
+            <div className="hidden text-center sm:block">
               <span className="micro-label text-slate-500">vs</span>
             </div>
-            <div className="flex items-center justify-end gap-3 text-right">
-              <div className="min-w-0">
+            <div className="flex items-center justify-end gap-3 border-t border-white/10 pt-4 text-right sm:border-t-0 sm:pt-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-lg font-black uppercase tracking-tight text-white">
                   {teamB.name}
                 </p>

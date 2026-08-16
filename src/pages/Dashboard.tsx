@@ -186,12 +186,12 @@ export default function Dashboard() {
               Create tournaments · manage the ones you organize · score live
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col items-stretch gap-1.5 sm:w-auto sm:flex-row sm:items-center sm:gap-2">
             <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
               Working tournament
             </Label>
             <Select value={tournamentId || undefined} onValueChange={setTournamentId}>
-              <SelectTrigger className="h-10 w-72 rounded-none border-border bg-card text-xs text-slate-200">
+              <SelectTrigger className="h-10 w-full rounded-none border-border bg-card text-xs text-slate-200 sm:w-72">
                 <SelectValue placeholder="Select tournament" />
               </SelectTrigger>
               <SelectContent className="rounded-none border-border bg-card">
