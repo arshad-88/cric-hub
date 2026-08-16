@@ -311,6 +311,20 @@ export const get = query({
         else if (d.extraType === EXTRA_TYPE.LEGBYE) extras.legbye += d.extraRuns;
       }
 
+      // Bowler who bowled the most recently completed over — used by the
+      // scorer to enforce the real-cricket rule that a bowler can't bowl two
+      // overs in a row (they're excluded from the next-over picker).
+      const legalDeliveries = deliveries.filter((d) => isLegalBall(d.extraType));
+      let lastOverBowlerId: Id<"players"> | null = null;
+      if (legalDeliveries.length >= 6) {
+        const lastCompletedOver = Math.floor(legalDeliveries.length / 6);
+        const lastOverRows = deliveries.filter(
+          (d) => d.overNumber === lastCompletedOver,
+        );
+        const lastRow = lastOverRows[lastOverRows.length - 1];
+        if (lastRow) lastOverBowlerId = lastRow.bowlerId;
+      }
+
       const isCurrent =
         inn._id === match.currentInningsId ||
         (!match.currentInningsId &&
@@ -356,6 +370,7 @@ export const get = query({
         striker: inn.strikerId ? (playerMap.get(inn.strikerId) ?? null) : null,
         nonStriker: inn.nonStrikerId ? (playerMap.get(inn.nonStrikerId) ?? null) : null,
         bowler: inn.currentBowlerId ? (playerMap.get(inn.currentBowlerId) ?? null) : null,
+        lastOverBowlerId,
         batters,
         bowlers,
         recentBalls: ballViews.slice(-8),

@@ -71,6 +71,7 @@ export interface InningsView {
   striker: { _id: string; name: string } | null;
   nonStriker: { _id: string; name: string } | null;
   bowler: { _id: string; name: string } | null;
+  lastOverBowlerId: string | null;
   batters: BatterView[];
   bowlers: BowlerView[];
   recentBalls: BallView[];

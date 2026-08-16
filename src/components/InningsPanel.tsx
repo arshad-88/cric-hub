@@ -10,6 +10,51 @@ export function inningsLabel(number: number): string {
   return number === 3 ? "Super Over 1" : "Super Over 2";
 }
 
+/** Live crease — who's on strike, non-strike and bowling, shown live on the
+ *  viewer's scorecard the moment the scorer locks them in. */
+function CreaseStrip({ innings }: { innings: InningsView }) {
+  const striker = innings.striker;
+  const nonStriker = innings.nonStriker;
+  const bowler = innings.bowler;
+  if (!striker && !nonStriker && !bowler) return null;
+  const strikerCard = innings.batters.find((b) => b.isStriker);
+  const nonStrikerCard = innings.batters.find((b) => b.isNonStriker);
+  const bowlerCard = innings.bowlers.find((b) => b.playerId === bowler?._id);
+  return (
+    <div className="grid grid-cols-3 gap-px border-b border-border bg-border">
+      <div className="bg-card px-3 py-2.5">
+        <MicroLabel className="text-[#22c55e]">Striker</MicroLabel>
+        <p className="mt-0.5 truncate text-sm font-extrabold text-white">
+          {strikerCard?.name ?? striker?.name ?? "—"}
+        </p>
+        <p className="score-nums text-[10px] font-bold text-slate-400">
+          {strikerCard ? `${strikerCard.runs} (${strikerCard.balls}) · ${strikerCard.sr} SR` : ""}
+        </p>
+      </div>
+      <div className="bg-card px-3 py-2.5">
+        <MicroLabel className="text-slate-500">Non-striker</MicroLabel>
+        <p className="mt-0.5 truncate text-sm font-extrabold text-white">
+          {nonStrikerCard?.name ?? nonStriker?.name ?? "—"}
+        </p>
+        <p className="score-nums text-[10px] font-bold text-slate-400">
+          {nonStrikerCard ? `${nonStrikerCard.runs} (${nonStrikerCard.balls})` : ""}
+        </p>
+      </div>
+      <div className="bg-card px-3 py-2.5">
+        <MicroLabel className="text-[#22d3ee]">Bowler</MicroLabel>
+        <p className="mt-0.5 truncate text-sm font-extrabold text-white">
+          {bowlerCard?.name ?? bowler?.name ?? "—"}
+        </p>
+        <p className="score-nums text-[10px] font-bold text-slate-400">
+          {bowlerCard
+            ? `${bowlerCard.overs}-${bowlerCard.maidens}-${bowlerCard.runs}-${bowlerCard.wickets}`
+            : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function BallsRow({ innings }: { innings: InningsView }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
@@ -257,6 +302,7 @@ export function InningsPanel({
         </div>
       </div>
 
+      {active && <CreaseStrip innings={innings} />}
       <BallsRow innings={innings} />
       <CurrentPartnership innings={innings} />
       <FallOfWickets innings={innings} />

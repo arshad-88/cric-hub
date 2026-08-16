@@ -252,6 +252,11 @@ export default function Scorer() {
   const strikerCard = current?.batters.find((b) => b.isStriker);
   const nonStrikerCard = current?.batters.find((b) => b.isNonStriker);
   const bowlerCard = current?.bowlers.find((b) => b.playerId === bowler?._id);
+  // Players already dismissed this innings — they cannot bat again, so they
+  // must never appear as the next-batter option when a wicket falls.
+  const outPlayerIds = (current?.batters ?? [])
+    .filter((b) => b.status === "out")
+    .map((b) => b.playerId);
 
   /** Record a scoring ball — for runs > 0 we first ask which shot + where it
    *  went (that placement feeds the wagon wheel), then record with the tags. */
@@ -633,7 +638,9 @@ export default function Scorer() {
       {/* dialogs */}
       {wicketOpen && current && (
         <WicketDialog
-          strikerId={striker?._id ?? null}
+          striker={striker}
+          nonStriker={nonStriker}
+          outPlayerIds={outPlayerIds}
           wicketsSoFar={current.wickets}
           superOver={current?.isSuperOver ?? false}
           battingSquad={battingSquadXI}
@@ -743,10 +750,19 @@ export default function Scorer() {
           <DialogContent className="rounded-none border-border sm:max-w-sm">
             <DialogHeader>
               <DialogTitle className="uppercase text-white">Change bowler</DialogTitle>
-              <DialogDescription>Pick the bowler for the current over.</DialogDescription>
+              <DialogDescription>
+                Pick the bowler for the current over — the one who bowled the
+                last over can't bowl two in a row, so they're not listed.
+              </DialogDescription>
             </DialogHeader>
             <BowlerPicker
-              squad={bowlingSquadXI}
+              squad={
+                newOver && current?.lastOverBowlerId
+                  ? bowlingSquadXI.filter(
+                      (p) => String(p._id) !== String(current?.lastOverBowlerId),
+                    )
+                  : bowlingSquadXI
+              }
               currentId={bowler?._id}
               onPick={async (playerId) => {
                 setBusy(true);
@@ -1302,7 +1318,7 @@ function Picker({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  players: PlayerDoc[];
+  players: { _id: string; name: string }[];
 }) {
   return (
     <div>
@@ -1324,7 +1340,9 @@ function Picker({
 }
 
 function WicketDialog({
-  strikerId,
+  striker,
+  nonStriker,
+  outPlayerIds,
   wicketsSoFar,
   superOver,
   battingSquad,
@@ -1332,7 +1350,9 @@ function WicketDialog({
   onCancel,
   onConfirm,
 }: {
-  strikerId: string | null;
+  striker: { _id: string; name: string } | null;
+  nonStriker: { _id: string; name: string } | null;
+  outPlayerIds: string[];
   wicketsSoFar: number;
   superOver: boolean;
   battingSquad: PlayerDoc[];
@@ -1347,7 +1367,15 @@ function WicketDialog({
   }) => Promise<void>;
 }) {
   const [wicketType, setWicketType] = useState<WicketType>("Bowled");
-  const [dismissed, setDismissed] = useState<string>(strikerId ?? "");
+  // Only the two batters at the crease can be dismissed — show striker and
+  // non-striker, nothing else.
+  const crease = [striker, nonStriker].filter(
+    (p): p is { _id: string; name: string } => p != null,
+  );
+  const dismissedOptions = crease.length > 0 ? crease : battingSquad;
+  const [dismissed, setDismissed] = useState<string>(
+    striker?._id ?? dismissedOptions[0]?._id ?? "",
+  );
   const [newBatsman, setNewBatsman] = useState("");
   const [fielder, setFielder] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1355,7 +1383,13 @@ function WicketDialog({
   // The 10th wicket ends a normal innings; a Super Over ends after 2 wickets.
   const isFinalWicket = wicketsSoFar + 1 >= (superOver ? 2 : 10);
   const needsFielder = wicketType === "Caught" || wicketType === "Run out" || wicketType === "Stumped";
-  const available = battingSquad.filter((p) => p._id !== dismissed);
+  // Next batter: never someone already out, never the two at the crease.
+  const excludedIds = new Set<string>([
+    ...outPlayerIds.map((id) => String(id)),
+    ...(striker ? [String(striker._id)] : []),
+    ...(nonStriker ? [String(nonStriker._id)] : []),
+  ]);
+  const available = battingSquad.filter((p) => !excludedIds.has(String(p._id)));
 
   const submit = async () => {
     if (!dismissed) {
@@ -1405,7 +1439,7 @@ function WicketDialog({
               </button>
             ))}
           </div>
-          <Picker label="Dismissed batter" value={dismissed} onChange={setDismissed} players={battingSquad} />
+          <Picker label="Dismissed batter" value={dismissed} onChange={setDismissed} players={dismissedOptions} />
           {isFinalWicket ? (
             <p className="border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
               {superOver ? "That's 2 wickets — Super Over over" : "That's the 10th wicket — innings over"}

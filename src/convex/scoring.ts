@@ -365,6 +365,24 @@ async function setBowlerCore(ctx: MutationCtx, args: SetBowlerArgs) {
     const inn = await ctx.db.get(inningsId);
     if (!inn) throw new Error("Innings not found");
     await assertPlayerInTeam(ctx, bowlerId, inn.bowlingTeamId, "Bowler");
+
+    // Real-cricket rule: a bowler who bowled the previous over cannot bowl the
+    // immediate next over. Only enforced at an over boundary (a full 6 legal
+    // balls completed) — mid-over manual bowler changes stay unrestricted.
+    const deliveries = await getDeliveries(ctx, inningsId);
+    const legalCount = deliveries.filter((d) => isLegalBall(d.extraType)).length;
+    if (legalCount > 0 && legalCount % 6 === 0) {
+      const lastCompletedOver = deliveries.filter(
+        (d) => d.overNumber === legalCount / 6,
+      );
+      const prevBowler = lastCompletedOver[lastCompletedOver.length - 1]?.bowlerId;
+      if (prevBowler && prevBowler === bowlerId) {
+        throw new Error(
+          "That bowler bowled the last over — a bowler can't bowl two in a row.",
+        );
+      }
+    }
+
     await ctx.db.patch(inningsId, { currentBowlerId: bowlerId });
     return inningsId;
 }
