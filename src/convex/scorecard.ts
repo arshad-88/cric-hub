@@ -32,7 +32,7 @@ import type { WicketType } from "./schema";
 export interface PlayerLite {
   _id: Id<"players">;
   name: string;
-  role: "Batsman" | "Bowler" | "All-rounder";
+  role: "Batsman" | "Bowler" | "All-rounder" | "Wicketkeeper";
 }
 
 export interface TeamLite {

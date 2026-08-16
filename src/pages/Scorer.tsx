@@ -48,7 +48,7 @@ interface PlayerDoc {
   _id: Id<"players">;
   teamId: Id<"teams">;
   name: string;
-  role: "Batsman" | "Bowler" | "All-rounder";
+  role: "Batsman" | "Bowler" | "All-rounder" | "Wicketkeeper";
 }
 
 const WICKET_TYPES: WicketType[] = ["Bowled", "Caught", "Run out", "Stumped", "LBW"];

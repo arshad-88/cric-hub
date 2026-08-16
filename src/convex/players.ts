@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { bowlerCredited, isLegalBall } from "./cricket";
@@ -206,6 +207,7 @@ export const getProfile = query({
         phone: player.phone ?? null,
         isPlayingXI: player.isPlayingXI ?? false,
         isCaptain: player.isCaptain ?? false,
+        isViceCaptain: player.isViceCaptain ?? false,
       },
       team: team
         ? {
@@ -286,7 +288,42 @@ export const listByTournament = query({
   },
 });
 
-/** Organizer: add a player to a squad (phone autofill + styles + jersey). */
+/**
+ * A team has exactly one captain and one vice-captain. When a player is
+ * (vice-)captain, every other (vice-)captain in the same squad is demoted so
+ * the badge never ends up on two players — and the team's captainId is kept
+ * pointing at the current captain.
+ */
+async function normalizeLeadership(
+  ctx: MutationCtx,
+  teamId: Id<"teams">,
+  selfId: Id<"players">,
+  isCaptain: boolean,
+  isViceCaptain: boolean,
+): Promise<void> {
+  const squad = await ctx.db
+    .query("players")
+    .withIndex("by_team", (q) => q.eq("teamId", teamId))
+    .collect();
+  if (isCaptain) {
+    for (const p of squad) {
+      if (p._id !== selfId && p.isCaptain) {
+        await ctx.db.patch(p._id, { isCaptain: false });
+      }
+    }
+    const team = await ctx.db.get(teamId);
+    if (team) await ctx.db.patch(teamId, { captainId: selfId });
+  }
+  if (isViceCaptain) {
+    for (const p of squad) {
+      if (p._id !== selfId && p.isViceCaptain) {
+        await ctx.db.patch(p._id, { isViceCaptain: false });
+      }
+    }
+  }
+}
+
+/** Organizer: add a player to a squad (styles + team role). */
 export const create = mutation({
   args: {
     teamId: v.id("teams"),
@@ -296,12 +333,14 @@ export const create = mutation({
     battingStyle: v.optional(v.string()),
     bowlingStyle: v.optional(v.string()),
     jerseyNumber: v.optional(v.number()),
+    isCaptain: v.optional(v.boolean()),
+    isViceCaptain: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const team = await ctx.db.get(args.teamId);
     if (!team) throw new Error("Team not found.");
     await requireOrganizer(ctx, team.tournamentId);
-    return await ctx.db.insert("players", {
+    const playerId = await ctx.db.insert("players", {
       teamId: args.teamId,
       name: args.name,
       // Store the canonical (E.164-style) number — the same normalization the
@@ -314,7 +353,13 @@ export const create = mutation({
       battingStyle: args.battingStyle,
       bowlingStyle: args.bowlingStyle,
       jerseyNumber: args.jerseyNumber,
+      isCaptain: args.isCaptain || undefined,
+      isViceCaptain: args.isViceCaptain || undefined,
     });
+    if (args.isCaptain || args.isViceCaptain) {
+      await normalizeLeadership(ctx, args.teamId, playerId, !!args.isCaptain, !!args.isViceCaptain);
+    }
+    return playerId;
   },
 });
 
@@ -328,6 +373,8 @@ export const update = mutation({
     battingStyle: v.optional(v.string()),
     bowlingStyle: v.optional(v.string()),
     jerseyNumber: v.optional(v.number()),
+    isCaptain: v.optional(v.boolean()),
+    isViceCaptain: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const player = await ctx.db.get(args.playerId);
@@ -342,7 +389,18 @@ export const update = mutation({
       battingStyle: args.battingStyle !== undefined ? args.battingStyle : player.battingStyle,
       bowlingStyle: args.bowlingStyle !== undefined ? args.bowlingStyle : player.bowlingStyle,
       jerseyNumber: args.jerseyNumber !== undefined ? args.jerseyNumber : player.jerseyNumber,
+      isCaptain: args.isCaptain !== undefined ? args.isCaptain : player.isCaptain,
+      isViceCaptain: args.isViceCaptain !== undefined ? args.isViceCaptain : player.isViceCaptain,
     });
+    if (args.isCaptain || args.isViceCaptain) {
+      await normalizeLeadership(
+        ctx,
+        player.teamId,
+        player._id,
+        !!args.isCaptain,
+        !!args.isViceCaptain,
+      );
+    }
     return args.playerId;
   },
 });

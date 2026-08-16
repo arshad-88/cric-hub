@@ -42,19 +42,33 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 
 const BALL_TYPES = ["Grace Ball", "Leather", "Tennis"] as const;
-const PLAYER_ROLES = ["Batsman", "Bowler", "All-rounder"] as const;
+const PLAYER_ROLES = [
+  "Batsman",
+  "Bowler",
+  "All-rounder",
+  "Wicketkeeper",
+] as const;
+const TEAM_ROLES = ["Player", "Captain", "Vice-Captain"] as const;
 const STAGES = ["Group", "Quarter-final", "Semi-final", "Final"] as const;
 const BATTING_STYLES = ["Right-hand bat", "Left-hand bat"] as const;
 const BOWLING_STYLES = [
+  "Right-arm fast",
   "Right-arm fast medium",
+  "Right-arm medium",
   "Right-arm off spin",
   "Leg spin",
+  "Leg spin googly",
+  "Left-arm fast",
+  "Left-arm fast medium",
+  "Left-arm medium",
   "Left-arm orthodox",
+  "Left-arm chinaman",
   "Left-arm medium fast",
 ] as const;
 
 type BallType = (typeof BALL_TYPES)[number];
 type PlayerRole = (typeof PLAYER_ROLES)[number];
+type TeamRole = (typeof TEAM_ROLES)[number];
 type Stage = (typeof STAGES)[number];
 
 interface TeamDoc {
@@ -76,6 +90,8 @@ interface PlayerDoc {
   battingStyle?: string;
   bowlingStyle?: string;
   jerseyNumber?: number;
+  isCaptain?: boolean;
+  isViceCaptain?: boolean;
 }
 
 interface TournamentRow {
@@ -1356,17 +1372,34 @@ function RosterEditor({ team, squad }: { team: TeamDoc; squad: PlayerDoc[] }) {
         )}
         {squad.map((p) => (
           <li key={p._id} className="flex items-center gap-3 px-3 py-2">
-            <span className="score-nums w-6 shrink-0 text-center text-[10px] font-black text-slate-500">
-              {p.jerseyNumber ?? "—"}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold text-slate-100">{p.name}</span>
-              <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
-                {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
-                {p.phone ? ` · ${p.phone}` : ""}
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {p.jerseyNumber != null && (
+                <span className="score-nums w-6 shrink-0 text-center text-[10px] font-black text-slate-500">
+                  {p.jerseyNumber}
+                </span>
+              )}
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="block truncate text-sm font-bold text-slate-100">{p.name}</span>
+                  {p.isCaptain && (
+                    <span className="shrink-0 bg-[#facc15] px-1 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-[#422006]">C</span>
+                  )}
+                  {p.isViceCaptain && (
+                    <span className="shrink-0 bg-[#22d3ee] px-1 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-[#083344]">VC</span>
+                  )}
+                </span>
+                <span className="block truncate text-[10px] uppercase tracking-wider text-slate-500">
+                  {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || p.role}
+                </span>
               </span>
             </span>
-            <span className="shrink-0 bg-[#22c55e]/10 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[#22c55e]">
+            <span
+              className={`shrink-0 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest ${
+                p.role === "Wicketkeeper"
+                  ? "bg-[#a78bfa]/20 text-[#a78bfa]"
+                  : "bg-[#22c55e]/10 text-[#22c55e]"
+              }`}
+            >
               {p.role}
             </span>
             <button
@@ -1410,7 +1443,6 @@ function RemovePlayer({ player }: { player: PlayerDoc }) {
   );
 }
 
-/** Enter a phone number → pull the player's account name (still editable). */
 function PlayerForm({
   teamId,
   player,
@@ -1423,23 +1455,13 @@ function PlayerForm({
   const create = useMutation(api.players.create);
   const update = useMutation(api.players.update);
   const [name, setName] = useState(player?.name ?? "");
-  const [phone, setPhone] = useState(player?.phone ?? "");
-  const [nameEdited, setNameEdited] = useState(player != null);
   const [role, setRole] = useState<PlayerRole>(player?.role ?? "Batsman");
+  const [teamRole, setTeamRole] = useState<TeamRole>(
+    player?.isCaptain ? "Captain" : player?.isViceCaptain ? "Vice-Captain" : "Player",
+  );
   const [battingStyle, setBattingStyle] = useState(player?.battingStyle ?? "");
   const [bowlingStyle, setBowlingStyle] = useState(player?.bowlingStyle ?? "");
-  const [jersey, setJersey] = useState(player?.jerseyNumber ?? 0);
   const [busy, setBusy] = useState(false);
-
-  const digits = phone.replace(/\D/g, "");
-  const lookup = useQuery(
-    api.users.lookupByPhone,
-    digits.length >= 10 ? { phone: digits } : "skip",
-  );
-  // auto-fill the name from the phone lookup until the user edits it
-  if (lookup && !nameEdited && lookup.name !== name) {
-    setName(lookup.name);
-  }
 
   const submit = async () => {
     if (!name.trim()) {
@@ -1449,11 +1471,11 @@ function PlayerForm({
     setBusy(true);
     try {
       const common = {
-        phone: digits || undefined,
         role,
+        isCaptain: teamRole === "Captain" || undefined,
+        isViceCaptain: teamRole === "Vice-Captain" || undefined,
         battingStyle: battingStyle || undefined,
         bowlingStyle: bowlingStyle || undefined,
-        jerseyNumber: jersey || undefined,
       };
       if (player) {
         await update({ playerId: player._id, name: name.trim(), ...common });
@@ -1472,46 +1494,12 @@ function PlayerForm({
 
   return (
     <div className="grid gap-3 border-b border-border bg-[#0b1524]/60 px-3 py-3 sm:grid-cols-2">
-      <Field label="Phone number — pulls the name & career stats" className="sm:col-span-2">
-        <div className="flex items-center gap-2">
-          <Input
-            className={inputCls}
-            value={phone}
-            onChange={(e) => {
-              setPhone(e.target.value);
-              setNameEdited(true);
-            }}
-            placeholder="98765 43210"
-            inputMode="tel"
-          />
-          {digits.length >= 10 && lookup === null && (
-            <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-slate-500">
-              Not registered — type the name
-            </span>
-          )}
-        </div>
-        {lookup && (
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border border-[#22c55e]/40 bg-[#052e16]/60 px-2.5 py-1.5 text-[10px] font-bold text-slate-300">
-            <span className="text-[#22c55e]">{lookup.name}</span>
-            <span className="score-nums text-slate-400">{lookup.phone}</span>
-            <span className="score-nums text-[#facc15]">{lookup.career.matches} matches</span>
-            <span className="score-nums text-[#facc15]">{lookup.career.runs} runs</span>
-            <span className="score-nums text-[#22d3ee]">{lookup.career.wickets} wkts</span>
-            <span className="score-nums text-slate-400">
-              {lookup.tournaments.length} league{lookup.tournaments.length === 1 ? "" : "s"}
-            </span>
-          </p>
-        )}
-      </Field>
-      <Field label="Player name">
+      <Field label="Player name" className="sm:col-span-2">
         <Input
           className={inputCls}
           value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setNameEdited(true);
-          }}
-          placeholder="Auto-fills from the number…"
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Full name"
         />
       </Field>
       <Field label="Role">
@@ -1521,6 +1509,18 @@ function PlayerForm({
           </SelectTrigger>
           <SelectContent className="rounded-none border-border bg-card">
             {PLAYER_ROLES.map((r) => (
+              <SelectItem key={r} value={r}>{r}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label="Team role">
+        <Select value={teamRole} onValueChange={(v) => setTeamRole(v as TeamRole)}>
+          <SelectTrigger className={inputCls}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="rounded-none border-border bg-card">
+            {TEAM_ROLES.map((r) => (
               <SelectItem key={r} value={r}>{r}</SelectItem>
             ))}
           </SelectContent>
@@ -1544,16 +1544,13 @@ function PlayerForm({
           <SelectTrigger className={inputCls}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="rounded-none border-border bg-card">
+          <SelectContent className="max-h-64 overflow-y-auto rounded-none border-border bg-card">
             <SelectItem value="none">— none —</SelectItem>
             {BOWLING_STYLES.map((s) => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </Field>
-      <Field label="Jersey number">
-        <Input className={inputCls} type="number" min={0} max={999} value={jersey} onChange={(e) => setJersey(Number(e.target.value) || 0)} />
       </Field>
       <div className="flex items-end gap-2">
         <Button

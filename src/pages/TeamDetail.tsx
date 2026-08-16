@@ -12,6 +12,7 @@ const roleStyles: Record<string, string> = {
   Batsman: "bg-[#22d3ee] text-[#083344]",
   Bowler: "bg-[#facc15] text-[#422006]",
   "All-rounder": "bg-[#22c55e] text-[#052e16]",
+  Wicketkeeper: "bg-[#a78bfa] text-[#2e1065]",
 };
 
 type Player = {
@@ -21,6 +22,7 @@ type Player = {
   jerseyNumber?: number | null;
   isPlayingXI?: boolean | null;
   isCaptain?: boolean | null;
+  isViceCaptain?: boolean | null;
 };
 
 function SquadList({ players, title }: { players: Player[]; title: string }) {
@@ -42,6 +44,11 @@ function SquadList({ players, title }: { players: Player[]; title: string }) {
               {p.isCaptain && (
                 <span className="shrink-0 bg-[#facc15] px-1 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-[#422006]">
                   C
+                </span>
+              )}
+              {p.isViceCaptain && (
+                <span className="shrink-0 bg-[#22d3ee] px-1 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-[#083344]">
+                  VC
                 </span>
               )}
             </span>

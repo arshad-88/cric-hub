@@ -37,12 +37,14 @@ export const PLAYER_ROLE = {
   BATSMAN: "Batsman",
   BOWLER: "Bowler",
   ALL_ROUNDER: "All-rounder",
+  WICKETKEEPER: "Wicketkeeper",
 } as const;
 
 export const playerRoleValidator = v.union(
   v.literal(PLAYER_ROLE.BATSMAN),
   v.literal(PLAYER_ROLE.BOWLER),
   v.literal(PLAYER_ROLE.ALL_ROUNDER),
+  v.literal(PLAYER_ROLE.WICKETKEEPER),
 );
 export type PlayerRole = Infer<typeof playerRoleValidator>;
 
@@ -184,6 +186,7 @@ const schema = defineSchema(
       jerseyNumber: v.optional(v.number()),
       isPlayingXI: v.optional(v.boolean()), // selected for the match-day eleven
       isCaptain: v.optional(v.boolean()), // captain badge (also in the XI)
+      isViceCaptain: v.optional(v.boolean()), // vice-captain badge
     }).index("by_team", ["teamId"]),
 
     // matches (id, tournament_id, team_a_id, team_b_id, status, toss, overs, stream_url)

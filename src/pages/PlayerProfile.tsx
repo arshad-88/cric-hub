@@ -86,6 +86,11 @@ export default function PlayerProfile() {
                   Captain
                 </span>
               )}
+              {player.isViceCaptain && (
+                <span className="bg-[#22d3ee]/15 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[#22d3ee]">
+                  Vice-Captain
+                </span>
+              )}
               {player.isPlayingXI && (
                 <span className="bg-[#22c55e]/15 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-[#22c55e]">
                   Playing XI
