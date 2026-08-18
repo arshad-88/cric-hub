@@ -429,6 +429,19 @@ const schema = defineSchema(
     })
       .index("by_innings", ["inningsId"])
       .index("by_match", ["matchId"]),
+
+    // Manual points overrides — lets the organizer edit a team's points table
+    // entry (points, wins, losses, etc.) without modifying match data.
+    pointsOverrides: defineTable({
+      tournamentId: v.id("tournaments"),
+      teamId: v.id("teams"),
+      played: v.optional(v.number()),
+      won: v.optional(v.number()),
+      lost: v.optional(v.number()),
+      tied: v.optional(v.number()),
+      points: v.optional(v.number()),
+      nrr: v.optional(v.number()),
+    }).index("by_tournament_team", ["tournamentId", "teamId"]),
   },
   {
     schemaValidation: false,

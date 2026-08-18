@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { PointsTable } from "@/components/PointsTable";
+import { RequireAuth } from "@/components/RequireAuth";
 import { PlayerLink } from "@/components/PlayerLink";
 import { MicroLabel, SectionHeading, TeamMark } from "@/components/swiss";
 import {
@@ -59,6 +60,10 @@ export default function Leaderboard() {
     mode === "tournament" && resolvedId
       ? { tournamentId: resolvedId as Id<"tournaments"> }
       : "skip",
+  );
+  const hub = useQuery(
+    api.admin.hubStats,
+    resolvedId ? { tournamentId: resolvedId as Id<"tournaments"> } : "skip",
   );
   const [category, setCategory] = useState<Category>("runs");
   const selected =
@@ -128,7 +133,7 @@ export default function Leaderboard() {
               {data === undefined ? (
                 <div className="h-40 animate-pulse border border-border bg-card" />
               ) : (
-                <PointsTable rows={data?.pointsTable ?? []} />
+                <PointsTable rows={data?.pointsTable ?? []} isOrganizer={hub?.isOrganizer === true} tournamentId={resolvedId} />
               )}
               <p className="mt-2 text-[10px] uppercase tracking-widest text-slate-600">
                 Win = 2 pts · Tie = 1 pt · NRR uses full allocation for all-out innings

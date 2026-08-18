@@ -176,17 +176,27 @@ export const get = query({
       }
     }
 
+    // Load manual points overrides (organizer can edit the table)
+    const overrides = await ctx.db
+      .query("pointsOverrides")
+      .withIndex("by_tournament_team", (q) =>
+        q.eq("tournamentId", tournament._id),
+      )
+      .collect();
+    const overrideMap = new Map(overrides.map((o) => [String(o.teamId), o]));
+
     const pointsTable = teams
       .map((team) => {
         const s = stats.get(team._id)!;
+        const ov = overrideMap.get(String(team._id));
         return {
           team: lite(team),
-          played: s.played,
-          won: s.won,
-          lost: s.lost,
-          tied: s.tied,
-          points: s.points,
-          nrr: teamNRR(s.runsFor, s.ballsFor, s.runsAgainst, s.ballsAgainst),
+          played: ov?.played ?? s.played,
+          won: ov?.won ?? s.won,
+          lost: ov?.lost ?? s.lost,
+          tied: ov?.tied ?? s.tied,
+          points: ov?.points ?? s.points,
+          nrr: ov?.nrr ?? teamNRR(s.runsFor, s.ballsFor, s.runsAgainst, s.ballsAgainst),
         };
       })
       .sort((a, b) => b.points - a.points || b.nrr - a.nrr);
@@ -467,5 +477,80 @@ export const career = query({
       topBatters: batters.slice(0, 10),
       topBowlers: bowlers.slice(0, 10),
     };
+  },
+});
+
+import { mutation } from "./_generated/server";
+import { requireOrganizer } from "./helpers";
+
+/**
+ * Save a manual points override for a team. The organizer can edit points,
+ * wins, losses, ties, played, and NRR. Pass null for any field to clear
+ * the override (revert to computed value).
+ */
+export const savePointsOverride = mutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    teamId: v.id("teams"),
+    played: v.optional(v.number()),
+    won: v.optional(v.number()),
+    lost: v.optional(v.number()),
+    tied: v.optional(v.number()),
+    points: v.optional(v.number()),
+    nrr: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireOrganizer(ctx, args.tournamentId);
+    const team = await ctx.db.get(args.teamId);
+    if (!team || team.tournamentId !== args.tournamentId) {
+      throw new Error("Team not found in this tournament.");
+    }
+    // Check for existing override
+    const existing = await ctx.db
+      .query("pointsOverrides")
+      .withIndex("by_tournament_team", (q) =>
+        q.eq("tournamentId", args.tournamentId).eq("teamId", args.teamId),
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        played: args.played ?? undefined,
+        won: args.won ?? undefined,
+        lost: args.lost ?? undefined,
+        tied: args.tied ?? undefined,
+        points: args.points ?? undefined,
+        nrr: args.nrr ?? undefined,
+      });
+    } else {
+      await ctx.db.insert("pointsOverrides", {
+        tournamentId: args.tournamentId,
+        teamId: args.teamId,
+        played: args.played ?? undefined,
+        won: args.won ?? undefined,
+        lost: args.lost ?? undefined,
+        tied: args.tied ?? undefined,
+        points: args.points ?? undefined,
+        nrr: args.nrr ?? undefined,
+      });
+    }
+    return { ok: true };
+  },
+});
+
+/**
+ * Clear all points overrides for a tournament (revert to computed values).
+ */
+export const clearPointsOverrides = mutation({
+  args: { tournamentId: v.id("tournaments") },
+  handler: async (ctx, args) => {
+    await requireOrganizer(ctx, args.tournamentId);
+    const overrides = await ctx.db
+      .query("pointsOverrides")
+      .withIndex("by_tournament_team", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .collect();
+    for (const o of overrides) await ctx.db.delete(o._id);
+    return { ok: true, deleted: overrides.length };
   },
 });

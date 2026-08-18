@@ -72,6 +72,10 @@ export default function MatchDetail() {
       ? { matchId: scorecard.match.id as Id<"matches"> }
       : "skip",
   );
+  const hub = useQuery(
+    api.admin.hubStats,
+    scorecard ? { tournamentId: scorecard.tournament.id as Id<"tournaments"> } : "skip",
+  );
 
   // Live popups need the batting/bowling squads of the CURRENT innings (the
   // toss may have sent either team in first).
@@ -344,7 +348,7 @@ export default function MatchDetail() {
               <MicroLabel className="mb-2 block text-[#facc15]">
                 {scorecard.tournament.name} — points table
               </MicroLabel>
-              <PointsTable rows={leaderboard?.pointsTable ?? []} />
+              <PointsTable rows={leaderboard?.pointsTable ?? []} isOrganizer={hub?.isOrganizer === true} tournamentId={scorecard?.tournament.id} />
             </div>
           )}
 
