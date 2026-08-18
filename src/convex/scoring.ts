@@ -1286,3 +1286,80 @@ export const setDLSTarget = mutation({
     return { ok: true, target: revisedTarget };
   },
 });
+
+// ---------------------------------------------------------------------------
+// Undo mutations for match controls
+// ---------------------------------------------------------------------------
+
+/**
+ * Undo a match that was ended early or conceded — revert from COMPLETED
+ * back to LIVE with no result.
+ */
+export const undoMatchEnd = mutation({
+  args: { matchId: v.id("matches") },
+  handler: async (ctx, { matchId }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    if (match.status !== "COMPLETED") throw new Error("Match is not completed.");
+    await ctx.db.patch(matchId, {
+      status: "LIVE",
+      result: undefined,
+    });
+    return { ok: true };
+  },
+});
+
+/**
+ * Undo a DLS target override — restore the target to the first innings
+ * total + 1 (the standard chasing target).
+ */
+export const undoDLSTarget = mutation({
+  args: { matchId: v.id("matches"), inningsId: v.id("innings") },
+  handler: async (ctx, { matchId, inningsId }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    const inn = await ctx.db.get(inningsId);
+    if (!inn || inn.matchId !== match._id) throw new Error("Innings does not belong to this match.");
+    if (inn.number !== 2 && inn.number !== 4) throw new Error("DLS target only applies to chasing innings.");
+    // Restore target to first innings total + 1
+    const firstInn = await ctx.db
+      .query("innings")
+      .withIndex("by_match", (q) => q.eq("matchId", matchId))
+      .collect();
+    const in1 = firstInn.find((i) => i.number === 1);
+    if (!in1) throw new Error("First innings not found.");
+    const originalTarget = in1.totalRuns + 1;
+    await ctx.db.patch(inningsId, { target: originalTarget });
+    return { ok: true, target: originalTarget };
+  },
+});
+
+/**
+ * Undo a returned retired-hurt batter — remove them from the crease.
+ * The scorer must then pick a replacement or end the innings.
+ */
+export const undoReturnBatter = mutation({
+  args: {
+    matchId: v.id("matches"),
+    inningsId: v.id("innings"),
+    playerId: v.id("players"),
+  },
+  handler: async (ctx, { matchId, inningsId, playerId }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    const inn = await ctx.db.get(inningsId);
+    if (!inn || inn.matchId !== match._id) throw new Error("Innings does not belong to this match.");
+    // Remove from whichever end they're at
+    if (inn.strikerId === playerId) {
+      await ctx.db.patch(inningsId, { strikerId: undefined });
+    } else if (inn.nonStrikerId === playerId) {
+      await ctx.db.patch(inningsId, { nonStrikerId: undefined });
+    } else {
+      throw new Error("This player is not currently at the crease.");
+    }
+    return { ok: true };
+  },
+});

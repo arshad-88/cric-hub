@@ -121,6 +121,9 @@ export default function Scorer() {
   const concedeMatch = useMutation(api.scoring.endMatchConceded);
   const returnRetiredHurt = useMutation(api.scoring.returnRetiredHurtBatter);
   const setDLSTargetM = useMutation(api.scoring.setDLSTarget);
+  const undoMatchEndM = useMutation(api.scoring.undoMatchEnd);
+  const undoDLSTargetM = useMutation(api.scoring.undoDLSTarget);
+  const undoReturnBatterM = useMutation(api.scoring.undoReturnBatter);
   const hub = useQuery(
     api.admin.hubStats,
     scorecard?.tournament.id
@@ -677,6 +680,47 @@ export default function Scorer() {
                   Return batter
                 </button>
               </div>
+              {/* Undo buttons — only show when a control action has been applied */}
+              {matchOver && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await undoMatchEndM({ matchId: match.id as Id<"matches"> });
+                      toast.success("Match reverted to live.");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Could not undo.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="mt-2 flex w-full items-center justify-center gap-1 border border-[#facc15]/40 bg-[#422006]/30 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-[#facc15] hover:border-[#facc15] hover:bg-[#422006]/60"
+                >
+                  <RotateCcw className="size-3" /> Undo end match
+                </button>
+              )}
+              {current && current.target != null && current.target !== (scorecard?.innings.find((i) => i.number === 1)?.totalRuns ?? 0) + 1 && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await undoDLSTargetM({ matchId: match.id as Id<"matches">, inningsId: current.id as Id<"innings"> });
+                      toast.success("DLS target reverted.");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Could not undo.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="mt-2 flex w-full items-center justify-center gap-1 border border-[#22d3ee]/40 bg-[#083344]/30 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-[#22d3ee] hover:border-[#22d3ee] hover:bg-[#083344]/60"
+                >
+                  <RotateCcw className="size-3" /> Undo DLS target
+                </button>
+              )}
             </div>
           </>
         )}
@@ -1824,6 +1868,7 @@ function BowlerPicker({
 function EndInningsDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (reason: string) => Promise<void> }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"reason" | "confirm">("reason");
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="rounded-none border-border sm:max-w-sm">
@@ -1831,11 +1876,25 @@ function EndInningsDialog({ onCancel, onConfirm }: { onCancel: () => void; onCon
           <DialogTitle className="uppercase text-[#facc15]">End innings early</DialogTitle>
           <DialogDescription>End the current innings because play cannot continue.</DialogDescription>
         </DialogHeader>
-        <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (e.g. rain, bad light)" />
-        <DialogFooter>
-          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
-          <Button className="rounded-none bg-[#facc15] uppercase text-[#422006]" onClick={async () => { setBusy(true); try { await onConfirm(reason); } finally { setBusy(false); } }} disabled={busy || !reason.trim()}>End innings</Button>
-        </DialogFooter>
+        {step === "reason" ? (
+          <>
+            <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (e.g. rain, bad light)" />
+            <DialogFooter>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+              <Button className="rounded-none bg-[#facc15] uppercase text-[#422006]" onClick={() => setStep("confirm")} disabled={!reason.trim()}>Next</Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <p className="border border-[#facc15]/50 bg-[#422006]/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#facc15]">
+              Are you sure? This will end the innings immediately. Reason: {reason}
+            </p>
+            <DialogFooter>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={() => setStep("reason")}>Back</Button>
+              <Button className="rounded-none bg-[#facc15] uppercase text-[#422006] hover:bg-[#ef4444] hover:text-white" onClick={async () => { setBusy(true); try { await onConfirm(reason); } finally { setBusy(false); } }} disabled={busy}>Confirm end innings</Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -1845,6 +1904,9 @@ function ConcedeDialog({ teamA, teamB, onCancel, onConfirm }: { teamA: { id: str
   const [concedingId, setConcedingId] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"select" | "confirm">("select");
+  const concedingName = concedingId === teamA.id ? teamA.name : concedingId === teamB.id ? teamB.name : "";
+  const winnerName = concedingId === teamA.id ? teamB.name : concedingId === teamB.id ? teamA.name : "";
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="rounded-none border-border sm:max-w-sm">
@@ -1852,19 +1914,31 @@ function ConcedeDialog({ teamA, teamB, onCancel, onConfirm }: { teamA: { id: str
           <DialogTitle className="uppercase text-[#ef4444]">Concede / Withdraw</DialogTitle>
           <DialogDescription>A team concedes. The other team wins by default.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 py-2">
-          <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Which team concedes?</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {[teamA, teamB].map((t) => (
-              <button key={t.id} type="button" onClick={() => setConcedingId(t.id)} className={cn("border px-3 py-3 text-xs font-extrabold uppercase tracking-wide", concedingId === t.id ? "border-[#ef4444] bg-[#ef4444] text-white" : "border-border bg-card text-slate-300")}>{t.name}</button>
-            ))}
+        {step === "select" ? (
+          <div className="space-y-3 py-2">
+            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Which team concedes?</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {[teamA, teamB].map((t) => (
+                <button key={t.id} type="button" onClick={() => setConcedingId(t.id)} className={cn("border px-3 py-3 text-xs font-extrabold uppercase tracking-wide", concedingId === t.id ? "border-[#ef4444] bg-[#ef4444] text-white" : "border-border bg-card text-slate-300")}>{t.name}</button>
+              ))}
+            </div>
+            <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
+            <DialogFooter>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+              <Button className="rounded-none bg-[#ef4444] uppercase text-white" onClick={() => setStep("confirm")} disabled={!concedingId}>Next</Button>
+            </DialogFooter>
           </div>
-          <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
-          <Button className="rounded-none bg-[#ef4444] uppercase text-white" onClick={async () => { setBusy(true); try { await onConfirm(concedingId, reason); } finally { setBusy(false); } }} disabled={busy || !concedingId}>Concede match</Button>
-        </DialogFooter>
+        ) : (
+          <>
+            <p className="border border-[#ef4444]/50 bg-[#ef4444]/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#ef4444]">
+              Are you sure? {concedingName} will concede. {winnerName} wins by default. This cannot be easily undone.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={() => setStep("select")}>Back</Button>
+              <Button className="rounded-none bg-[#ef4444] uppercase text-white hover:bg-[#dc2626]" onClick={async () => { setBusy(true); try { await onConfirm(concedingId, reason); } finally { setBusy(false); } }} disabled={busy}>Confirm concede</Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
