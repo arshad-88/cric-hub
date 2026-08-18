@@ -69,6 +69,29 @@ export const get = query({
         .collect();
       const in1 = innings.find((i) => i.number === 1);
       const in2 = innings.find((i) => i.number === 2);
+
+      // Conceded/withdrawn matches: no innings may exist, but the result
+      // string still names the winner. We award 2 pts to the winner, 0 to
+      // the conceder, and skip NRR entirely.
+      const isConceded = m.result?.startsWith("[CONCEDED]") ?? false;
+      if (isConceded) {
+        // Parse winner from result: "[CONCEDED] Team A won by Team B ..."
+        const winnerNameInResult = m.result?.match(/^\[CONCEDED\] (.+?) won by/)?.[1];
+        const winnerTeam = teams.find((t) => t.name === winnerNameInResult);
+        for (const team of teams) {
+          const s = stats.get(team._id);
+          if (!s) continue;
+          s.played += 1;
+          if (winnerTeam && team._id === winnerTeam._id) {
+            s.won += 1;
+            s.points += 2;
+          } else {
+            s.lost += 1;
+          }
+        }
+        continue; // skip NRR + normal winner logic
+      }
+
       if (!in1) continue;
 
       let winnerId: string | null;
@@ -135,18 +158,20 @@ export const get = query({
         }
       }
 
-      // NRR accumulation (an all-out innings counts as the full allocation)
-      for (const inn of innings) {
-        const oversFaced = inn.wickets >= 10 ? m.overs * 6 : inn.ballsBowled;
-        const bat = stats.get(inn.battingTeamId);
-        const bowl = stats.get(inn.bowlingTeamId);
-        if (bat) {
-          bat.runsFor += inn.totalRuns;
-          bat.ballsFor += oversFaced;
-        }
-        if (bowl) {
-          bowl.runsAgainst += inn.totalRuns;
-          bowl.ballsAgainst += oversFaced;
+      // NRR accumulation — skip for conceded/withdrawn matches (no innings played)
+      if (!isConceded) {
+        for (const inn of innings) {
+          const oversFaced = inn.wickets >= 10 ? m.overs * 6 : inn.ballsBowled;
+          const bat = stats.get(inn.battingTeamId);
+          const bowl = stats.get(inn.bowlingTeamId);
+          if (bat) {
+            bat.runsFor += inn.totalRuns;
+            bat.ballsFor += oversFaced;
+          }
+          if (bowl) {
+            bowl.runsAgainst += inn.totalRuns;
+            bowl.ballsAgainst += oversFaced;
+          }
         }
       }
     }

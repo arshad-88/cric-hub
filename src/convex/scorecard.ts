@@ -404,7 +404,7 @@ export const get = query({
     const in2 = inningsViews.find((i) => i.number === 2) ?? null;
     const in3 = inningsViews.find((i) => i.number === 3) ?? null;
     const in4 = inningsViews.find((i) => i.number === 4) ?? null;
-    const result =
+    const rawResult =
       match.result ??
       (match.status === "COMPLETED" && in1 && in2
         ? computeMatchResult(
@@ -425,6 +425,7 @@ export const get = query({
             },
           )
         : null);
+    const result = rawResult?.replace(/^\[CONCEDED\]\s*/, "") ?? null;
 
     // ---- outcome predictor -------------------------------------------------
     // League average first-innings total (completed matches of this

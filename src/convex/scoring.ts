@@ -1179,7 +1179,7 @@ export const endMatchConceded = mutation({
     const loserName = (await ctx.db.get(concedingTeamId))?.name ?? "?";
     const winnerName = (await ctx.db.get(winnerTeamId))?.name ?? "?";
     const reasonText = reason ? ` (${reason})` : "";
-    const resultText = `${winnerName} won by ${loserName} conceding/withdrawing${reasonText}.`;
+    const resultText = `[CONCEDED] ${winnerName} won by ${loserName} conceding/withdrawing${reasonText}.`;
     await ctx.db.patch(matchId, {
       status: "COMPLETED",
       result: resultText,
