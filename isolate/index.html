@@ -8,11 +8,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CricPulse — Live Community Cricket</title>
   <meta name="description" content="Real-time cricket scores, ball-by-ball commentary, points tables, caps and live YouTube/Twitch streams for every league." />
-  <script type="module" crossorigin src="/assets/index-0LjNmigz.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/react-vendor-ClF39cPz.js">
-  <link rel="modulepreload" crossorigin href="/assets/framer-motion-CVghI2mp.js">
-  <link rel="modulepreload" crossorigin href="/assets/radix-ui-Um7w3hlU.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-CRV61gCF.css">
+  <script>
+    // Apply the saved theme before first paint so there is no flash and the
+    // first render already uses the right colors. Kept in sync with the
+    // localStorage key used by src/hooks/use-theme.ts.
+    (function () {
+      try {
+        var t = window.localStorage.getItem("cricpulse-theme");
+        document.documentElement.classList.add(t === "light" ? "light" : "dark");
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
+    })();
+  </script>
+  <script type="module" crossorigin src="/assets/index-BdjIClMt.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/react-vendor-CkFDIj6O.js">
+  <link rel="modulepreload" crossorigin href="/assets/framer-motion-DGw-KMoY.js">
+  <link rel="modulepreload" crossorigin href="/assets/radix-ui-D9888_dQ.js">
+  <link rel="stylesheet" crossorigin href="/assets/index-VmaC60v1.css">
 </head>
 
 

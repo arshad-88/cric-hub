@@ -43,7 +43,7 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 
 type ExtraType = "wide" | "noball" | "bye" | "legbye";
-type WicketType = "Bowled" | "Caught" | "Run out" | "Stumped" | "LBW";
+type WicketType = "Bowled" | "Caught" | "Run out" | "Stumped" | "LBW" | "Hit wicket" | "Obstructing the field" | "Timed out" | "Retired hurt" | "Retired out";
 
 interface PlayerDoc {
   _id: Id<"players">;
@@ -643,6 +643,41 @@ export default function Scorer() {
                 )}
               </div>
             </div>
+
+            {/* match controls — admin actions for unusual situations */}
+            <div className="mt-4 border border-border bg-card px-3 py-2.5">
+              <MicroLabel className="mb-2 block text-slate-500">Match controls</MicroLabel>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEndInningsOpen(true)}
+                  className="border border-border bg-card px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 hover:border-[#facc15] hover:text-[#facc15]"
+                >
+                  End innings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDlsTargetOpen(true)}
+                  className="border border-border bg-card px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 hover:border-[#22d3ee] hover:text-[#22d3ee]"
+                >
+                  DLS target
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConcedeOpen(true)}
+                  className="border border-border bg-card px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 hover:border-[#ef4444] hover:text-[#ef4444]"
+                >
+                  Concede
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReturnBatterOpen(true)}
+                  className="border border-border bg-card px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-widest text-slate-400 hover:border-[#22c55e] hover:text-[#22c55e]"
+                >
+                  Return batter
+                </button>
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -823,6 +858,100 @@ export default function Scorer() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {endInningsOpen && current && (
+        <EndInningsDialog
+          onCancel={() => setEndInningsOpen(false)}
+          onConfirm={async (reason) => {
+            setBusy(true);
+            try {
+              await endInningsEarlyM({
+                matchId: match.id as Id<"matches">,
+                inningsId: current.id as Id<"innings">,
+                reason,
+              });
+              toast.success("Innings ended early.");
+              setEndInningsOpen(false);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not end innings.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+
+      {concedeOpen && (
+        <ConcedeDialog
+          teamA={{ id: teamA._id, name: teamA.name }}
+          teamB={{ id: teamB._id, name: teamB.name }}
+          onCancel={() => setConcedeOpen(false)}
+          onConfirm={async (concedingTeamId, reason) => {
+            setBusy(true);
+            try {
+              await concedeMatch({
+                matchId: match.id as Id<"matches">,
+                concedingTeamId: concedingTeamId as Id<"teams">,
+                reason: reason || undefined,
+              });
+              toast.success("Match ended — opponent conceded.");
+              setConcedeOpen(false);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not concede match.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+
+      {dlsTargetOpen && current && (
+        <DLSTargetDialog
+          onCancel={() => setDlsTargetOpen(false)}
+          onConfirm={async (target, reason) => {
+            setBusy(true);
+            try {
+              await setDLSTargetM({
+                matchId: match.id as Id<"matches">,
+                inningsId: current.id as Id<"innings">,
+                revisedTarget: target,
+                reason: reason || undefined,
+              });
+              toast.success(`DLS target set to ${target}.`);
+              setDlsTargetOpen(false);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not set DLS target.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+
+      {returnBatterOpen && current && (
+        <ReturnBatterDialog
+          inningsId={current.id as Id<"innings">}
+          battingSquad={battingSquadXI}
+          onCancel={() => setReturnBatterOpen(false)}
+          onConfirm={async (playerId, asStriker) => {
+            setBusy(true);
+            try {
+              await returnRetiredHurt({
+                matchId: match.id as Id<"matches">,
+                inningsId: current.id as Id<"innings">,
+                playerId: playerId as Id<"players">,
+                asStriker,
+              });
+              toast.success("Batter returned to the crease.");
+              setReturnBatterOpen(false);
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Could not return batter.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
       )}
     </ScorerShell>
   );
@@ -1689,3 +1818,111 @@ function BowlerPicker({
   );
 }
 
+
+// ============ Match control dialogs ============
+
+function EndInningsDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (reason: string) => Promise<void> }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="rounded-none border-border sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="uppercase text-[#facc15]">End innings early</DialogTitle>
+          <DialogDescription>End the current innings because play cannot continue.</DialogDescription>
+        </DialogHeader>
+        <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (e.g. rain, bad light)" />
+        <DialogFooter>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+          <Button className="rounded-none bg-[#facc15] uppercase text-[#422006]" onClick={async () => { setBusy(true); try { await onConfirm(reason); } finally { setBusy(false); } }} disabled={busy || !reason.trim()}>End innings</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConcedeDialog({ teamA, teamB, onCancel, onConfirm }: { teamA: { id: string; name: string }; teamB: { id: string; name: string }; onCancel: () => void; onConfirm: (concedingTeamId: string, reason: string) => Promise<void> }) {
+  const [concedingId, setConcedingId] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="rounded-none border-border sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="uppercase text-[#ef4444]">Concede / Withdraw</DialogTitle>
+          <DialogDescription>A team concedes. The other team wins by default.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Which team concedes?</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {[teamA, teamB].map((t) => (
+              <button key={t.id} type="button" onClick={() => setConcedingId(t.id)} className={cn("border px-3 py-3 text-xs font-extrabold uppercase tracking-wide", concedingId === t.id ? "border-[#ef4444] bg-[#ef4444] text-white" : "border-border bg-card text-slate-300")}>{t.name}</button>
+            ))}
+          </div>
+          <Input className="rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+          <Button className="rounded-none bg-[#ef4444] uppercase text-white" onClick={async () => { setBusy(true); try { await onConfirm(concedingId, reason); } finally { setBusy(false); } }} disabled={busy || !concedingId}>Concede match</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DLSTargetDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (target: number, reason: string) => Promise<void> }) {
+  const [target, setTarget] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="rounded-none border-border sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="uppercase text-[#22d3ee]">Set DLS target</DialogTitle>
+          <DialogDescription>Set a revised target for the chasing side (DLS method).</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Revised target</Label>
+            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={1} value={target} onChange={(e) => setTarget(e.target.value)} placeholder="e.g. 142" />
+          </div>
+          <div>
+            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Reason</Label>
+            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Rain delay" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+          <Button className="rounded-none bg-[#22d3ee] uppercase text-[#083344]" onClick={async () => { setBusy(true); try { await onConfirm(Number(target), reason); } finally { setBusy(false); } }} disabled={busy || !target || Number(target) < 1}>Set target</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReturnBatterDialog({ battingSquad, onCancel, onConfirm }: { inningsId: string; battingSquad: PlayerDoc[]; onCancel: () => void; onConfirm: (playerId: string, asStriker: boolean) => Promise<void> }) {
+  const [playerId, setPlayerId] = useState("");
+  const [asStriker, setAsStriker] = useState(true);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="rounded-none border-border sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="uppercase text-[#22c55e]">Return retired hurt batter</DialogTitle>
+          <DialogDescription>A retired hurt batter can return to the crease.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <Picker label="Batter" value={playerId} onChange={setPlayerId} players={battingSquad} />
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setAsStriker(true)} className={cn("border px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide", asStriker ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]" : "border-border bg-card text-slate-300")}>Striker</button>
+            <button type="button" onClick={() => setAsStriker(false)} className={cn("border px-3 py-2.5 text-xs font-extrabold uppercase tracking-wide", !asStriker ? "border-[#22c55e] bg-[#22c55e] text-[#052e16]" : "border-border bg-card text-slate-300")}>Non-striker</button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="rounded-none border-border uppercase text-slate-300" onClick={onCancel}>Cancel</Button>
+          <Button className="rounded-none bg-[#22c55e] uppercase text-[#052e16]" onClick={async () => { setBusy(true); try { await onConfirm(playerId, asStriker); } finally { setBusy(false); } }} disabled={busy || !playerId}>Return to crease</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
