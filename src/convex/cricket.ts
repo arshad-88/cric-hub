@@ -89,9 +89,17 @@ export function isInningsComplete(
   return wickets >= 10 || ballsBowled >= totalOvers * 6;
 }
 
-/** Bowler gets the wicket for every dismissal except run-outs. */
+/** Bowler gets the wicket for every dismissal except run-outs, retired hurt,
+ * retired out, obstructing the field, and timed out. */
 export function bowlerCredited(d: DeliveryLike): boolean {
-  return d.isWicket && d.wicketType !== WICKET_TYPE.RUN_OUT;
+  return (
+    d.isWicket &&
+    d.wicketType !== WICKET_TYPE.RUN_OUT &&
+    d.wicketType !== WICKET_TYPE.RETIRED_HURT &&
+    d.wicketType !== WICKET_TYPE.RETIRED_OUT &&
+    d.wicketType !== WICKET_TYPE.OBSTRUCTING &&
+    d.wicketType !== WICKET_TYPE.TIMED_OUT
+  );
 }
 
 // ---- result computation ---------------------------------------------------
@@ -267,6 +275,23 @@ export function buildCommentary(
         how = `lbw b ${names.bowler}`;
         break;
       case WICKET_TYPE.RUN_OUT:
+        how = names.fielder ? `run out (${names.fielder})` : "run out";
+        break;
+      case WICKET_TYPE.HIT_WICKET:
+        how = `hit wicket b ${names.bowler}`;
+        break;
+      case WICKET_TYPE.OBSTRUCTING:
+        how = `obstructing the field`;
+        break;
+      case WICKET_TYPE.TIMED_OUT:
+        how = `timed out`;
+        break;
+      case WICKET_TYPE.RETIRED_HURT:
+        how = `retired hurt`;
+        break;
+      case WICKET_TYPE.RETIRED_OUT:
+        how = `retired out`;
+        break;
       default:
         how = names.fielder ? `run out (${names.fielder})` : "run out";
         break;
@@ -467,9 +492,11 @@ export function replayCrease(
     }
     const rotateBy =
       d.runsScored +
-      (d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
+      (d.extraType === EXTRA_TYPE.WIDE
         ? d.extraRuns
-        : 0);
+        : d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
+          ? d.extraRuns
+          : 0);
     if (rotateBy % 2 === 1 && striker && nonStriker) {
       const t = striker;
       striker = nonStriker;

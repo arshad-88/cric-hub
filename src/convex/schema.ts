@@ -54,6 +54,11 @@ export const WICKET_TYPE = {
   RUN_OUT: "Run out",
   STUMPED: "Stumped",
   LBW: "LBW",
+  HIT_WICKET: "Hit wicket",
+  OBSTRUCTING: "Obstructing the field",
+  TIMED_OUT: "Timed out",
+  RETIRED_HURT: "Retired hurt",
+  RETIRED_OUT: "Retired out",
 } as const;
 
 export const wicketTypeValidator = v.union(
@@ -62,8 +67,18 @@ export const wicketTypeValidator = v.union(
   v.literal(WICKET_TYPE.RUN_OUT),
   v.literal(WICKET_TYPE.STUMPED),
   v.literal(WICKET_TYPE.LBW),
+  v.literal(WICKET_TYPE.HIT_WICKET),
+  v.literal(WICKET_TYPE.OBSTRUCTING),
+  v.literal(WICKET_TYPE.TIMED_OUT),
+  v.literal(WICKET_TYPE.RETIRED_HURT),
+  v.literal(WICKET_TYPE.RETIRED_OUT),
 );
 export type WicketType = Infer<typeof wicketTypeValidator>;
+
+/** Whether a wicket type means the batter can return to the crease (retired hurt). */
+export function isReturnableDismissal(t: WicketType): boolean {
+  return t === WICKET_TYPE.RETIRED_HURT;
+}
 
 export const EXTRA_TYPE = {
   NONE: "none",

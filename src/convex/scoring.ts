@@ -27,9 +27,10 @@ import {
   replayCrease,
   superOverWinnerId,
   TEAM_MILESTONES,
+  formatOvers,
 } from "./cricket";
 import type { DeliveryLike } from "./cricket";
-import { EXTRA_TYPE, extraTypeValidator, wicketTypeValidator } from "./schema";
+import { EXTRA_TYPE, WICKET_TYPE, extraTypeValidator, wicketTypeValidator } from "./schema";
 import type { ExtraType, WicketType } from "./schema";
 import type { MutationCtx } from "./_generated/server";
 
@@ -367,19 +368,24 @@ async function setBowlerCore(ctx: MutationCtx, args: SetBowlerArgs) {
     await assertPlayerInTeam(ctx, bowlerId, inn.bowlingTeamId, "Bowler");
 
     // Real-cricket rule: a bowler who bowled the previous over cannot bowl the
-    // immediate next over. Only enforced at an over boundary (a full 6 legal
-    // balls completed) — mid-over manual bowler changes stay unrestricted.
+    // immediate next over. If the last ball is ball 1 of a new over, the scorer
+    // is starting a new over and we enforce the rule. Otherwise (mid-over
+    // correction), allow it.
     const deliveries = await getDeliveries(ctx, inningsId);
-    const legalCount = deliveries.filter((d) => isLegalBall(d.extraType)).length;
-    if (legalCount > 0 && legalCount % 6 === 0) {
-      const lastCompletedOver = deliveries.filter(
-        (d) => d.overNumber === legalCount / 6,
-      );
-      const prevBowler = lastCompletedOver[lastCompletedOver.length - 1]?.bowlerId;
-      if (prevBowler && prevBowler === bowlerId) {
-        throw new Error(
-          "That bowler bowled the last over — a bowler can't bowl two in a row.",
-        );
+    if (deliveries.length > 0) {
+      const lastLegal = [...deliveries].reverse().find((d) => isLegalBall(d.extraType));
+      if (lastLegal && lastLegal.ballNumber === 1 && lastLegal.bowlerId === bowlerId) {
+        // The last legal ball was ball 1 of a new over, meaning the scorer is
+        // starting a new over. Reject if the previous over's bowler matches.
+        const prevOverRows = deliveries.filter((d) => d.overNumber === lastLegal.overNumber - 1);
+        if (prevOverRows.length > 0) {
+          const prevBowler = prevOverRows[prevOverRows.length - 1].bowlerId;
+          if (prevBowler === bowlerId) {
+            throw new Error(
+              "That bowler bowled the previous over — a bowler can't bowl two in a row.",
+            );
+          }
+        }
       }
     }
 
@@ -467,7 +473,9 @@ async function recordDeliveryCore(ctx: MutationCtx, args: RecordDeliveryArgs) {
     if (args.extraType === EXTRA_TYPE.NONE) {
       if (args.extraRuns !== 0) throw new Error("A legal ball carries no extras.");
     } else if (args.extraType === EXTRA_TYPE.WIDE) {
-      if (args.runsScored !== 0) throw new Error("Runs off a wide are extras, not batter runs.");
+      // A wide is at least 1 penalty run. Runs scored by the batter on a wide
+      // are not credited to the batter — they are all extras. The extraRuns
+      // field holds the TOTAL extras (1 penalty + any additional running).
       if (args.extraRuns < 1) throw new Error("A wide is worth at least 1 run.");
     } else if (args.extraType === EXTRA_TYPE.NOBALL) {
       if (args.extraRuns < 1) throw new Error("A no-ball is worth at least 1 run.");
@@ -479,6 +487,8 @@ async function recordDeliveryCore(ctx: MutationCtx, args: RecordDeliveryArgs) {
       if (!args.wicketType || !args.dismissedBatterId) {
         throw new Error("A wicket needs a type and the dismissed batter.");
       }
+      // Retired-out ends the innings the same as a regular dismissal. For
+      // retired-hurt the batter may return, but a replacement still comes in.
       // The 10th wicket ends the innings, so no replacement is required.
       if (wktsSoFar + 1 < 10 && !args.newBatsmanId) {
         throw new Error("Pick the replacement batter who comes in next.");
@@ -1038,4 +1048,241 @@ export const undoLastDelivery = mutation({
 export const undoLastDeliveryInternal = internalMutation({
   args: undoLastDeliveryArgs,
   handler: async (ctx, args) => undoLastDeliveryCore(ctx, args),
+});
+
+// ---------------------------------------------------------------------------
+// Match control — manual innings termination, concession/withdrawal, retired hurt return
+// ---------------------------------------------------------------------------
+
+/**
+ * End an innings early when play cannot continue (weather, ground conditions,
+ * technical issues, etc.). The scorer provides a reason. If innings 1 ends
+ * this way, the match result depends on whether innings 2 has started: if not,
+ * the match is abandoned/completed without result. If innings 2 is in progress,
+ * DLS or the current state determines the result.
+ */
+export const endInningsEarly = mutation({
+  args: {
+    matchId: v.id("matches"),
+    inningsId: v.id("innings"),
+    reason: v.string(),
+  },
+  handler: async (ctx, { matchId, inningsId, reason }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    if (match.status !== "LIVE") throw new Error("The match is not live.");
+    const inn = await ctx.db.get(inningsId);
+    if (!inn || inn.matchId !== match._id) {
+      throw new Error("Innings does not belong to this match.");
+    }
+
+    const deliveries = await getDeliveries(ctx, inningsId);
+    const totalRuns = deliveries.reduce((s, d) => s + d.totalRuns, 0);
+    const wickets = deliveries.filter((d) => d.isWicket).length;
+    const ballsBowled = deliveries.filter((d) => isLegalBall(d.extraType)).length;
+
+    // Update the innings with final stats
+    await ctx.db.patch(inningsId, { totalRuns, wickets, ballsBowled });
+
+    if (inn.number === 1) {
+      // Innings 1 ended early — no innings 2 has started yet
+      // Mark the match as completed with no result (abandoned)
+      const btName = (await ctx.db.get(inn.battingTeamId))?.name ?? "?";
+      const bwName = (await ctx.db.get(inn.bowlingTeamId))?.name ?? "?";
+      const resultText = `Innings 1 ended early (${reason}). ${btName} ${totalRuns}/${wickets} in ${formatOvers(ballsBowled)} overs. No result.`;
+      await ctx.db.patch(matchId, {
+        status: "COMPLETED",
+        result: resultText,
+        currentInningsId: inningsId,
+      });
+      await ctx.runMutation(internal.notifications.recordEvent, {
+        matchId,
+        type: "result",
+        title: "INNINGS ENDED EARLY",
+        message: resultText,
+        inningsNumber: 1,
+      });
+      return { ok: true, result: resultText };
+    }
+
+    if (inn.number === 2) {
+      // Innings 2 ended early — compute result based on DLS or current state
+      const in1 = deliveries.length > 0 ? await getFirstInnings(ctx, matchId) : null;
+      let resultText: string;
+      if (in1 && totalRuns >= (in1.totalRuns + 1)) {
+        const wktsLeft = 10 - wickets;
+        resultText = `${(await ctx.db.get(inn.battingTeamId))?.name ?? "?"} won by ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} (innings ended early: ${reason}).`;
+      } else if (in1 && totalRuns === in1.totalRuns) {
+        resultText = `Match tied (innings ended early: ${reason}). Both teams receive 1 point.`;
+      } else {
+        const battingName = (await ctx.db.get(inn.battingTeamId))?.name ?? "?";
+        const bowlingName = (await ctx.db.get(inn.bowlingTeamId))?.name ?? "?";
+        const margin = in1 ? in1.totalRuns - totalRuns : 0;
+        resultText = `${bowlingName} won by ${margin} run${margin === 1 ? "" : "s"} (innings ended early: ${reason}).`;
+      }
+      await ctx.db.patch(matchId, {
+        status: "COMPLETED",
+        result: resultText,
+        currentInningsId: inningsId,
+      });
+      await ctx.runMutation(internal.notifications.recordEvent, {
+        matchId,
+        type: "result",
+        title: "MATCH ENDED EARLY",
+        message: resultText,
+        inningsNumber: 2,
+      });
+      return { ok: true, result: resultText };
+    }
+
+    throw new Error("Cannot end a super over innings early.");
+  },
+});
+
+async function getFirstInnings(
+  ctx: MutationCtx,
+  matchId: Id<"matches">,
+): Promise<{ totalRuns: number; wickets: number; ballsBowled: number } | null> {
+  const rows = await ctx.db
+    .query("innings")
+    .withIndex("by_match", (q) => q.eq("matchId", matchId))
+    .collect();
+  const in1 = rows.find((i) => i.number === 1);
+  return in1
+    ? { totalRuns: in1.totalRuns, wickets: in1.wickets, ballsBowled: in1.ballsBowled }
+    : null;
+}
+
+/**
+ * End the match due to opponent withdrawal / concession. The winning team is
+ * recorded and the result reflects the concession.
+ */
+export const endMatchConceded = mutation({
+  args: {
+    matchId: v.id("matches"),
+    concedingTeamId: v.id("teams"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { matchId, concedingTeamId, reason }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    if (match.status !== "LIVE" && match.status !== "UPCOMING") {
+      throw new Error("Match is not in a state that can be conceded.");
+    }
+    if (match.teamAId === concedingTeamId && match.teamBId === concedingTeamId) {
+      throw new Error("Invalid team.");
+    }
+    const winnerTeamId =
+      concedingTeamId === match.teamAId ? match.teamBId : match.teamAId;
+    const loserName = (await ctx.db.get(concedingTeamId))?.name ?? "?";
+    const winnerName = (await ctx.db.get(winnerTeamId))?.name ?? "?";
+    const reasonText = reason ? ` (${reason})` : "";
+    const resultText = `${winnerName} won by ${loserName} conceding/withdrawing${reasonText}.`;
+    await ctx.db.patch(matchId, {
+      status: "COMPLETED",
+      result: resultText,
+    });
+    await ctx.runMutation(internal.notifications.recordEvent, {
+      matchId,
+      type: "result",
+      title: "MATCH CONCEDED",
+      message: resultText,
+    });
+    return { ok: true, result: resultText, winnerTeamId };
+  },
+});
+
+/**
+ * Return a retired-hurt batter to the crease. The scorer picks which end they
+ * take (striker or non-striker). Only batters with a "Retired hurt" dismissal
+ * in the deliveries table may be returned.
+ */
+export const returnRetiredHurtBatter = mutation({
+  args: {
+    matchId: v.id("matches"),
+    inningsId: v.id("innings"),
+    playerId: v.id("players"),
+    asStriker: v.boolean(),
+  },
+  handler: async (ctx, { matchId, inningsId, playerId, asStriker }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    const inn = await ctx.db.get(inningsId);
+    if (!inn || inn.matchId !== match._id) {
+      throw new Error("Innings does not belong to this match.");
+    }
+    if (inn.isSuperOver) throw new Error("Cannot return a batter in a Super Over.");
+
+    // Verify this player was retired hurt in this innings
+    const deliveries = await getDeliveries(ctx, inningsId);
+    const retiredHurtDelivery = deliveries.find(
+      (d) => d.dismissedBatterId === playerId && d.wicketType === WICKET_TYPE.RETIRED_HURT,
+    );
+    if (!retiredHurtDelivery) {
+      throw new Error("This player was not retired hurt in this innings.");
+    }
+
+    // Verify the player isn't currently at the crease
+    if (inn.strikerId === playerId || inn.nonStrikerId === playerId) {
+      throw new Error("This player is already at the crease.");
+    }
+
+    // Verify they are on the batting side
+    await assertPlayerInTeam(ctx, playerId, inn.battingTeamId, "Player");
+
+    // Place them at the requested end
+    if (asStriker) {
+      await ctx.db.patch(inningsId, { strikerId: playerId });
+    } else {
+      await ctx.db.patch(inningsId, { nonStrikerId: playerId });
+    }
+
+    return { ok: true };
+  },
+});
+
+/**
+ * Set a DLS-revised target for the chasing innings. Used when rain or other
+ * interruptions reduce the match. The scorer enters the revised target, and
+ * the innings ends when that target is reached.
+ */
+export const setDLSTarget = mutation({
+  args: {
+    matchId: v.id("matches"),
+    inningsId: v.id("innings"),
+    revisedTarget: v.number(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { matchId, inningsId, revisedTarget, reason }) => {
+    const match = await ctx.db.get(matchId);
+    if (!match) throw new Error("Match not found");
+    await requireOrganizer(ctx, match.tournamentId);
+    const inn = await ctx.db.get(inningsId);
+    if (!inn || inn.matchId !== match._id) {
+      throw new Error("Innings does not belong to this match.");
+    }
+    if (inn.number !== 2 && inn.number !== 4) {
+      throw new Error("DLS target only applies to chasing innings.");
+    }
+    if (revisedTarget < 1) throw new Error("Target must be at least 1.");
+
+    await ctx.db.patch(inningsId, { target: revisedTarget });
+
+    const btName = (await ctx.db.get(inn.battingTeamId))?.name ?? "?";
+    const bwName = (await ctx.db.get(inn.bowlingTeamId))?.name ?? "?";
+    const resultText = reason
+      ? `DLS revised target: ${btName} need ${revisedTarget} to win (${reason}).`
+      : `DLS revised target: ${btName} need ${revisedTarget} to win.`;
+    await ctx.runMutation(internal.notifications.recordEvent, {
+      matchId,
+      type: "innings",
+      title: "DLS TARGET SET",
+      message: resultText,
+      inningsNumber: inn.number,
+    });
+    return { ok: true, target: revisedTarget };
+  },
 });

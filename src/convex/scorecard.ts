@@ -61,6 +61,17 @@ function dismissalText(
     case WICKET_TYPE.LBW:
       return `lbw b ${bowlerName ?? "?"}`;
     case WICKET_TYPE.RUN_OUT:
+      return fielderName ? `run out (${fielderName})` : "run out";
+    case WICKET_TYPE.HIT_WICKET:
+      return `hit wicket b ${bowlerName ?? "?"}`;
+    case WICKET_TYPE.OBSTRUCTING:
+      return `obstructing the field`;
+    case WICKET_TYPE.TIMED_OUT:
+      return `timed out`;
+    case WICKET_TYPE.RETIRED_HURT:
+      return `retired hurt`;
+    case WICKET_TYPE.RETIRED_OUT:
+      return `retired out`;
     default:
       return fielderName ? `run out (${fielderName})` : "run out";
   }

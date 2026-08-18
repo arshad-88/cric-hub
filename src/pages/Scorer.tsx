@@ -57,7 +57,11 @@ interface PlayerDoc {
   isViceCaptain?: boolean;
 }
 
-const WICKET_TYPES: WicketType[] = ["Bowled", "Caught", "Run out", "Stumped", "LBW"];
+const WICKET_TYPES: WicketType[] = [
+  "Bowled", "Caught", "Run out", "Stumped", "LBW",
+  "Hit wicket", "Obstructing the field", "Timed out",
+  "Retired hurt", "Retired out",
+];
 
 /** Shot options asked after every scoring ball (feeds the wagon wheel). */
 const SHOT_TYPES = [
@@ -113,6 +117,10 @@ export default function Scorer() {
   const setBatsmen = useMutation(api.scoring.setBatsmen);
   const updateStream = useMutation(api.matches.updateStreamUrl);
   const undoToss = useMutation(api.matches.undoToss);
+  const endInningsEarlyM = useMutation(api.scoring.endInningsEarly);
+  const concedeMatch = useMutation(api.scoring.endMatchConceded);
+  const returnRetiredHurt = useMutation(api.scoring.returnRetiredHurtBatter);
+  const setDLSTargetM = useMutation(api.scoring.setDLSTarget);
   const hub = useQuery(
     api.admin.hubStats,
     scorecard?.tournament.id
@@ -129,6 +137,10 @@ export default function Scorer() {
   const [streamUrl, setStreamUrl] = useState("");
   const [shotPending, setShotPending] = useState<number | null>(null);
   const [xiEdit, setXiEdit] = useState(false);
+  const [endInningsOpen, setEndInningsOpen] = useState(false);
+  const [concedeOpen, setConcedeOpen] = useState(false);
+  const [returnBatterOpen, setReturnBatterOpen] = useState(false);
+  const [dlsTargetOpen, setDlsTargetOpen] = useState(false);
   const events = useQuery(
     api.notifications.listForMatch,
     matchId ? { matchId: matchId as Id<"matches"> } : "skip",
