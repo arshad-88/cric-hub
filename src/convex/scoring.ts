@@ -368,19 +368,32 @@ async function setBowlerCore(ctx: MutationCtx, args: SetBowlerArgs) {
     await assertPlayerInTeam(ctx, bowlerId, inn.bowlingTeamId, "Bowler");
 
     // Real-cricket rule: a bowler who bowled the previous over cannot bowl the
-    // immediate next over. If the last ball is ball 1 of a new over, the scorer
-    // is starting a new over and we enforce the rule. Otherwise (mid-over
-    // correction), allow it.
+    // immediate next over. We enforce this at the over boundary AND track the
+    // current over's bowler to prevent mid-over corrections from bypassing it.
     const deliveries = await getDeliveries(ctx, inningsId);
     if (deliveries.length > 0) {
       const lastLegal = [...deliveries].reverse().find((d) => isLegalBall(d.extraType));
-      if (lastLegal && lastLegal.ballNumber === 1 && lastLegal.bowlerId === bowlerId) {
-        // The last legal ball was ball 1 of a new over, meaning the scorer is
-        // starting a new over. Reject if the previous over's bowler matches.
-        const prevOverRows = deliveries.filter((d) => d.overNumber === lastLegal.overNumber - 1);
-        if (prevOverRows.length > 0) {
-          const prevBowler = prevOverRows[prevOverRows.length - 1].bowlerId;
-          if (prevBowler === bowlerId) {
+      if (lastLegal) {
+        const lastOver = lastLegal.overNumber;
+        const prevOverBowlers = deliveries
+          .filter((d) => d.overNumber === lastOver - 1 && isLegalBall(d.extraType))
+          .map((d) => d.bowlerId);
+        const prevBowler = prevOverBowlers.length > 0 ? prevOverBowlers[prevOverBowlers.length - 1] : null;
+        // Over boundary: ball 1 of new over → always enforce
+        if (lastLegal.ballNumber === 1 && prevBowler === bowlerId) {
+          throw new Error(
+            "That bowler bowled the previous over — a bowler can't bowl two in a row.",
+          );
+        }
+        // Mid-over: balls 2–6 in same over already entered → check against
+        // the bowler already set for this over (prev-over bowler stored on the
+        // innings row). Prevents: enter ball 1 with X, then change to the
+        // previous-over bowler Y via mid-over correction.
+        if (lastLegal.ballNumber > 1 && lastLegal.overNumber === lastOver) {
+          const currentOverBowler = deliveries
+            .filter((d) => d.overNumber === lastOver && isLegalBall(d.extraType))
+            .map((d) => d.bowlerId)[0];
+          if (currentOverBowler && prevBowler === bowlerId) {
             throw new Error(
               "That bowler bowled the previous over — a bowler can't bowl two in a row.",
             );

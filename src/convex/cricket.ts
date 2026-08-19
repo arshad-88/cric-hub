@@ -493,7 +493,9 @@ export function replayCrease(
     const rotateBy =
       d.runsScored +
       (d.extraType === EXTRA_TYPE.WIDE
-        ? d.extraRuns
+        // On a wide the first run is the automatic penalty (no running needed);
+        // only the ADDITIONAL running counts for strike rotation (Law 38.4).
+        ? Math.max(0, d.extraRuns - 1)
         : d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
           ? d.extraRuns
           : 0);
@@ -556,6 +558,16 @@ export function aggregateBatterStats(
         fielderId: d.fielderId,
       };
     }
+    // Run-out of the non-striker (dismissedBatterId ≠ batsmanId):
+    // ensure the dismissed player has an entry and record their dismissal.
+    if (d.isWicket && d.dismissedBatterId && d.dismissedBatterId !== d.batsmanId) {
+      const de = ensure(d.dismissedBatterId);
+      de.dismissal = {
+        wicketType: d.wicketType ?? WICKET_TYPE.RUN_OUT,
+        bowlerId: d.bowlerId,
+        fielderId: d.fielderId,
+      };
+    }
   }
   return map;
 }
@@ -606,7 +618,9 @@ export function aggregateBowlerStats(
     o.runs += d.totalRuns;
   }
   for (const o of overStats.values()) {
-    if (o.balls === 6 && o.runs === 0) {
+    // A maiden is an over where no runs were scored. Extras (wides/no-balls)
+    // can extend the over beyond 6 legal balls, so allow ≥6.
+    if (o.balls >= 6 && o.runs === 0) {
       const e = map.get(o.bowlerId);
       if (e) e.maidens += 1;
     }
@@ -673,9 +687,11 @@ export function aggregatePartnerships(
     } else {
       const rotateBy =
         d.runsScored +
-        (d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
-          ? d.extraRuns
-          : 0);
+        (d.extraType === EXTRA_TYPE.WIDE
+          ? Math.max(0, d.extraRuns - 1)
+          : d.extraType === EXTRA_TYPE.BYE || d.extraType === EXTRA_TYPE.LEGBYE
+            ? d.extraRuns
+            : 0);
       if (rotateBy % 2 === 1 && striker && nonStriker) {
         const t = striker;
         striker = nonStriker;
