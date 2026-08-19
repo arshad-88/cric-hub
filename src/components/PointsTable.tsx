@@ -166,10 +166,8 @@ function PointsEditDialog({
   onSaved: () => void;
 }) {
   const saveOverride = useMutation(api.leaderboard.savePointsOverride);
-  const [played, setPlayed] = useState(String(row.played));
-  const [won, setWon] = useState(String(row.won));
-  const [lost, setLost] = useState(String(row.lost));
-  const [tied, setTied] = useState(String(row.tied));
+  // Only points and NRR can be overridden — W/L/T/played are always
+  // auto-computed from match results so they cannot drift out of sync.
   const [points, setPoints] = useState(String(row.points));
   const [nrr, setNrr] = useState(String(row.nrr.toFixed(3)));
   const [busy, setBusy] = useState(false);
@@ -180,10 +178,6 @@ function PointsEditDialog({
       await saveOverride({
         tournamentId: tournamentId as Id<"tournaments">,
         teamId: row.team._id as Id<"teams">,
-        played: Number(played),
-        won: Number(won),
-        lost: Number(lost),
-        tied: Number(tied),
         points: Number(points),
         nrr: parseFloat(nrr) || 0,
       });
@@ -204,27 +198,11 @@ function PointsEditDialog({
             Edit {row.team.name}
           </DialogTitle>
           <DialogDescription>
-            Override the computed values. Leave as-is to keep auto-calculated
-            numbers.
+            Adjust points or NRR for special cases (penalty, organiser decision).
+            W / L / T / played are always auto-computed from match results.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-3 gap-3 py-2">
-          <div>
-            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Played</Label>
-            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={0} value={played} onChange={(e) => setPlayed(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Won</Label>
-            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={0} value={won} onChange={(e) => setWon(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Lost</Label>
-            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={0} value={lost} onChange={(e) => setLost(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Tied</Label>
-            <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={0} value={tied} onChange={(e) => setTied(e.target.value)} />
-          </div>
+        <div className="grid grid-cols-2 gap-3 py-2">
           <div>
             <Label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Points</Label>
             <Input className="mt-1 rounded-none border-border bg-panel text-slate-200" type="number" min={0} value={points} onChange={(e) => setPoints(e.target.value)} />

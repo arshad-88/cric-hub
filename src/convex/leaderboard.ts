@@ -242,12 +242,15 @@ export const get = query({
       .map((team) => {
         const s = stats.get(team._id)!;
         const ov = overrideMap.get(String(team._id));
+        // W / L / T / played are ALWAYS auto-computed from match results.
+        // Only points and NRR can be overridden (for organizer adjustments
+        // that don't have a corresponding match — e.g. penalty points).
         return {
           team: lite(team),
-          played: ov?.played ?? s.played,
-          won: ov?.won ?? s.won,
-          lost: ov?.lost ?? s.lost,
-          tied: ov?.tied ?? s.tied,
+          played: s.played,
+          won: s.won,
+          lost: s.lost,
+          tied: s.tied,
           points: ov?.points ?? s.points,
           nrr: ov?.nrr ?? teamNRR(s.runsFor, s.ballsFor, s.runsAgainst, s.ballsAgainst),
         };
@@ -565,23 +568,14 @@ export const savePointsOverride = mutation({
         q.eq("tournamentId", args.tournamentId).eq("teamId", args.teamId),
       )
       .unique();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        played: args.played ?? undefined,
-        won: args.won ?? undefined,
-        lost: args.lost ?? undefined,
-        tied: args.tied ?? undefined,
-        points: args.points ?? undefined,
-        nrr: args.nrr ?? undefined,
-      });
-    } else {
+    // W / L / T / played are ALWAYS auto-computed from match results.
+    // Only points and NRR can be overridden. Delete any stale override
+    // first so old W/L/T/played/points values never hide correct stats.
+    if (existing) await ctx.db.delete(existing._id);
+    if (args.points != null || args.nrr != null) {
       await ctx.db.insert("pointsOverrides", {
         tournamentId: args.tournamentId,
         teamId: args.teamId,
-        played: args.played ?? undefined,
-        won: args.won ?? undefined,
-        lost: args.lost ?? undefined,
-        tied: args.tied ?? undefined,
         points: args.points ?? undefined,
         nrr: args.nrr ?? undefined,
       });
