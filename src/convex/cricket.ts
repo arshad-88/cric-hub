@@ -111,7 +111,12 @@ export function matchWinnerTeamId(
   if (!in2) return null;
   const target = in2.target ?? in1.totalRuns + 1;
   if (in2.totalRuns >= target) return in2.battingTeamId;
-  if (in2.totalRuns === in1.totalRuns) return null; // tie
+  // A tie is when the chasing team exactly matches the first-innings score
+  // AND the standard target (in1.totalRuns + 1) was not modified (no DLS).
+  // With a DLS-adjusted target the score comparison is against the target,
+  // not in1.totalRuns — if they fell short of target, the bowling side wins.
+  const isDls = in2.target != null && in2.target !== in1.totalRuns + 1;
+  if (!isDls && in2.totalRuns === in1.totalRuns) return null; // genuine tie
   return in1.battingTeamId;
 }
 
@@ -128,7 +133,8 @@ export function computeMatchResult(
       10 - in2.wickets === 1 ? "" : "s"
     }`;
   }
-  if (in2.totalRuns === in1.totalRuns) return "Match tied";
+  const isDls = in2.target != null && in2.target !== in1.totalRuns + 1;
+  if (!isDls && in2.totalRuns === in1.totalRuns) return "Match tied";
   const margin = in1.totalRuns - in2.totalRuns;
   return `${teamNames.batting1} won by ${margin} run${margin === 1 ? "" : "s"}`;
 }

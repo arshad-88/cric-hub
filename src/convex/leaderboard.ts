@@ -78,11 +78,13 @@ export const get = query({
         // Parse winner from result: "[CONCEDED] Team A won by Team B ..."
         const winnerNameInResult = m.result?.match(/^\[CONCEDED\] (.+?) won by/)?.[1];
         const winnerTeam = teams.find((t) => t.name === winnerNameInResult);
-        for (const team of teams) {
-          const s = stats.get(team._id);
+        // Only update the TWO teams in this match (not all tournament teams)
+        const matchTeams = [m.teamAId, m.teamBId];
+        for (const teamId of matchTeams) {
+          const s = stats.get(teamId);
           if (!s) continue;
           s.played += 1;
-          if (winnerTeam && team._id === winnerTeam._id) {
+          if (winnerTeam && teamId === winnerTeam._id) {
             s.won += 1;
             s.points += 2;
           } else {
@@ -93,6 +95,26 @@ export const get = query({
       }
 
       if (!in1) continue;
+
+      // Match completed with only innings 1 (e.g. endInningsEarly on inn1):
+      // no second innings was ever played, so treat as a no-result match.
+      // Both teams get +1 played but no W/L/points/NRR.
+      if (!in2 && m.status === "COMPLETED") {
+        const s1 = stats.get(in1.battingTeamId);
+        const s2 = stats.get(in1.bowlingTeamId);
+        if (s1) s1.played += 1;
+        if (s2) s2.played += 1;
+        continue;
+      }
+      if (!in2) {
+        // Match still live (innings 1 done, innings 2 not started yet).
+        // Count both teams as having played 1 match each — no W/L/NRR yet.
+        const s1 = stats.get(in1.battingTeamId);
+        const s2 = stats.get(in1.bowlingTeamId);
+        if (s1) s1.played += 1;
+        if (s2) s2.played += 1;
+        continue;
+      }
 
       let winnerId: string | null;
       if (m.superOver) {
