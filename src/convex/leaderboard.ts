@@ -63,24 +63,13 @@ export const get = query({
     for (const team of teams) stats.set(team._id, stat());
 
     for (const m of completed) {
-      const innings = await ctx.db
-        .query("innings")
-        .withIndex("by_match", (q) => q.eq("matchId", m._id))
-        .collect();
-      const in1 = innings.find((i) => i.number === 1);
-      const in2 = innings.find((i) => i.number === 2);
-
-      // Conceded/withdrawn matches: no innings may exist, but the result
-      // string still names the winner. We award 2 pts to the winner, 0 to
-      // the conceder, and skip NRR entirely.
+      // ---- conceded / withdrawn matches ---------------------------------
+      // No innings may exist, but the result string names the winner.
       const isConceded = m.result?.startsWith("[CONCEDED]") ?? false;
       if (isConceded) {
-        // Parse winner from result: "[CONCEDED] Team A won by Team B ..."
         const winnerNameInResult = m.result?.match(/^\[CONCEDED\] (.+?) won by/)?.[1];
         const winnerTeam = teams.find((t) => t.name === winnerNameInResult);
-        // Only update the TWO teams in this match (not all tournament teams)
-        const matchTeams = [m.teamAId, m.teamBId];
-        for (const teamId of matchTeams) {
+        for (const teamId of [m.teamAId, m.teamBId]) {
           const s = stats.get(teamId);
           if (!s) continue;
           s.played += 1;
@@ -91,58 +80,81 @@ export const get = query({
             s.lost += 1;
           }
         }
-        continue; // skip NRR + normal winner logic
+        continue; // no NRR for conceded matches
       }
 
-      if (!in1) continue;
+      // ---- fetch innings ------------------------------------------------
+      const innings = await ctx.db
+        .query("innings")
+        .withIndex("by_match", (q) => q.eq("matchId", m._id))
+        .collect();
+      const in1 = innings.find((i) => i.number === 1);
+      const in2 = innings.find((i) => i.number === 2);
 
-      // Match completed with only innings 1 (e.g. endInningsEarly on inn1):
-      // no second innings was ever played, so treat as a no-result match.
-      // Both teams get +1 played but no W/L/points/NRR.
-      if (!in2 && m.status === "COMPLETED") {
-        const s1 = stats.get(in1.battingTeamId);
-        const s2 = stats.get(in1.bowlingTeamId);
-        if (s1) s1.played += 1;
-        if (s2) s2.played += 1;
+      // ---- BOTH match participants ALWAYS get +1 Played ------------------
+      // This runs unconditionally so no team is silently skipped.
+      const sA = stats.get(m.teamAId);
+      const sB = stats.get(m.teamBId);
+      if (sA) sA.played += 1;
+      if (sB) sB.played += 1;
+
+      // If only innings 1 exists and the match is completed (e.g.
+      // endInningsEarly on inn1), it's a no-result: both get +1P +1Pt
+      // but no W/L/T and no NRR.
+      if (!in1 || !in2) {
+        if (sA) sA.points += 1;
+        if (sB) sB.points += 1;
         continue;
       }
-      if (!in2) {
-        // Match still live (innings 1 done, innings 2 not started yet).
-        // Count both teams as having played 1 match each — no W/L/NRR yet.
-        const s1 = stats.get(in1.battingTeamId);
-        const s2 = stats.get(in1.bowlingTeamId);
-        if (s1) s1.played += 1;
-        if (s2) s2.played += 1;
-        continue;
-      }
 
-      let winnerId: string | null;
+      // ---- determine winner ---------------------------------------------
+      let winnerId: string | null = null;
+
       if (m.superOver) {
         const in3 = innings.find((i) => i.number === 3);
         const in4 = innings.find((i) => i.number === 4);
-        const boundariesOf = async (inn: (typeof in3) | null) => {
-          if (!inn) return 0;
-          const ds = await ctx.db
-            .query("deliveries")
-            .withIndex("by_innings", (q) => q.eq("inningsId", inn._id))
-            .collect();
-          return countBoundaries(ds);
-        };
-        winnerId =
-          in3 && in4
-            ? superOverWinnerId(
-                {
-                  battingTeamId: in3.battingTeamId,
-                  totalRuns: in3.totalRuns,
-                  boundaries: await boundariesOf(in3),
-                },
-                {
-                  battingTeamId: in4.battingTeamId,
-                  totalRuns: in4.totalRuns,
-                  boundaries: await boundariesOf(in4),
-                },
-              )
-            : null;
+        if (in3 && in4) {
+          // Super over completed — determine winner from SO data.
+          const boundariesOf = async (inn: (typeof in3) | null) => {
+            if (!inn) return 0;
+            const ds = await ctx.db
+              .query("deliveries")
+              .withIndex("by_innings", (q) => q.eq("inningsId", inn._id))
+              .collect();
+            return countBoundaries(ds);
+          };
+          winnerId = superOverWinnerId(
+            {
+              battingTeamId: in3.battingTeamId,
+              totalRuns: in3.totalRuns,
+              boundaries: await boundariesOf(in3),
+            },
+            {
+              battingTeamId: in4.battingTeamId,
+              totalRuns: in4.totalRuns,
+              boundaries: await boundariesOf(in4),
+            },
+          );
+        } else {
+          // Super over flag is stale (e.g. after undo cleared the SO innings).
+          // Fall back to regular match winner detection from inn1/inn2.
+          winnerId = matchWinnerTeamId(
+            {
+              battingTeamId: in1.battingTeamId,
+              totalRuns: in1.totalRuns,
+              wickets: in1.wickets,
+              ballsBowled: in1.ballsBowled,
+              target: in1.target ?? undefined,
+            },
+            {
+              battingTeamId: in2.battingTeamId,
+              totalRuns: in2.totalRuns,
+              wickets: in2.wickets,
+              ballsBowled: in2.ballsBowled,
+              target: in2.target ?? undefined,
+            },
+          );
+        }
       } else {
         winnerId = matchWinnerTeamId(
           {
@@ -152,27 +164,46 @@ export const get = query({
             ballsBowled: in1.ballsBowled,
             target: in1.target ?? undefined,
           },
-          in2
-            ? {
-                battingTeamId: in2.battingTeamId,
-                totalRuns: in2.totalRuns,
-                wickets: in2.wickets,
-                ballsBowled: in2.ballsBowled,
-                target: in2.target ?? undefined,
-              }
-            : null,
+          {
+            battingTeamId: in2.battingTeamId,
+            totalRuns: in2.totalRuns,
+            wickets: in2.wickets,
+            ballsBowled: in2.ballsBowled,
+            target: in2.target ?? undefined,
+          },
         );
       }
 
-      for (const battingTeamId of [in1.battingTeamId, in2?.battingTeamId]) {
-        if (!battingTeamId) continue;
-        const s = stats.get(battingTeamId);
+      // ---- result-string fallback for winner detection -------------------
+      // If innings data gives null but the stored result names a winner,
+      // parse it to avoid stale/inconsistent data producing a false tie.
+      if (winnerId === null && m.result) {
+        const resultLower = m.result.toLowerCase();
+        if (resultLower.includes("won by")) {
+          // Extract the team name before "won by" — could be "Team A won by"
+          // or "Team A won the Super Over by" etc.
+          const winnerNameMatch = m.result.match(/^(.+?)\s+won\b/);
+          if (winnerNameMatch) {
+            const winnerName = winnerNameMatch[1].trim();
+            const fallbackTeam = teams.find(
+              (t) => t.name === winnerName || m.result?.startsWith(winnerName),
+            );
+            if (fallbackTeam) winnerId = fallbackTeam._id;
+          }
+        }
+      }
+
+      // ---- apply W / L / T / Pts to BOTH match participants ---------------
+      // Always iterate over m.teamAId and m.teamBId (not innings batting
+      // teams) so both teams are guaranteed to be updated.
+      for (const teamId of [m.teamAId, m.teamBId]) {
+        const s = stats.get(teamId);
         if (!s) continue;
-        s.played += 1;
         if (winnerId === null) {
+          // Genuine tie (both innings exist, scores equal)
           s.tied += 1;
           s.points += 1;
-        } else if (winnerId === battingTeamId) {
+        } else if (winnerId === teamId) {
           s.won += 1;
           s.points += 2;
         } else {
@@ -180,20 +211,20 @@ export const get = query({
         }
       }
 
-      // NRR accumulation — skip for conceded/withdrawn matches (no innings played)
-      if (!isConceded) {
-        for (const inn of innings) {
-          const oversFaced = inn.wickets >= 10 ? m.overs * 6 : inn.ballsBowled;
-          const bat = stats.get(inn.battingTeamId);
-          const bowl = stats.get(inn.bowlingTeamId);
-          if (bat) {
-            bat.runsFor += inn.totalRuns;
-            bat.ballsFor += oversFaced;
-          }
-          if (bowl) {
-            bowl.runsAgainst += inn.totalRuns;
-            bowl.ballsAgainst += oversFaced;
-          }
+      // ---- NRR accumulation ---------------------------------------------
+      // ICC rule: all-out counts as full overs allocation.
+      // Chase completed early: use actual balls faced (not full allocation).
+      for (const inn of innings) {
+        const oversFaced = inn.wickets >= 10 ? m.overs * 6 : inn.ballsBowled;
+        const bat = stats.get(inn.battingTeamId);
+        const bowl = stats.get(inn.bowlingTeamId);
+        if (bat) {
+          bat.runsFor += inn.totalRuns;
+          bat.ballsFor += oversFaced;
+        }
+        if (bowl) {
+          bowl.runsAgainst += inn.totalRuns;
+          bowl.ballsAgainst += oversFaced;
         }
       }
     }
