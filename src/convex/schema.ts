@@ -187,6 +187,7 @@ const schema = defineSchema(
       logoUrl: v.optional(v.string()),
       coach: v.optional(v.string()), // team coach / mentor name
       captainId: v.optional(v.id("players")), // the captain (also part of the XI)
+      withdrawn: v.optional(v.boolean()), // team withdrew from the tournament
     }).index("by_tournament", ["tournamentId"]),
 
     // players (id, team_id, name, phone, role, styles, jersey). `phone` lets

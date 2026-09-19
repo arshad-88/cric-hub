@@ -1233,6 +1233,7 @@ function CreateTeamForm({
 
 function TeamEditForm({ team, onDone }: { team: TeamDoc; onDone: () => void }) {
   const update = useMutation(api.teams.update);
+  const withdrawTeam = useMutation(api.teams.withdraw);
   const [name, setName] = useState(team.name);
   const [shortCode, setShortCode] = useState(team.shortCode);
   const [color, setColor] = useState(team.color);

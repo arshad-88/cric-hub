@@ -35,10 +35,13 @@ export const get = query({
       : await getActiveTournament(ctx);
     if (!tournament) return null;
 
-    const teams = await ctx.db
+    const allTeams = await ctx.db
       .query("teams")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
       .collect();
+    // Active teams (not withdrawn) appear in the points table.
+    // Withdrawn teams are still used for NRR of their opponents.
+    const teams = allTeams.filter((t) => !t.withdrawn);
     const matches = await ctx.db
       .query("matches")
       .withIndex("by_tournament_status", (q) =>
@@ -60,7 +63,7 @@ export const get = query({
       ballsAgainst: 0,
     });
     const stats = new Map<Id<"teams">, ReturnType<typeof stat>>();
-    for (const team of teams) stats.set(team._id, stat());
+    for (const team of allTeams) stats.set(team._id, stat());
 
     for (const m of completed) {
       // ---- conceded / withdrawn matches ---------------------------------
@@ -278,7 +281,7 @@ export const get = query({
       await Promise.all([...playerIds].map((id) => ctx.db.get(id)))
     ).filter((p) => p !== null);
     const playerMap = new Map(players.map((p) => [p!._id, p!]));
-    const teamMap = new Map(teams.map((t) => [t._id, t]));
+    const teamMap = new Map(allTeams.map((t) => [t._id, t]));
 
     const inningsCount = new Map<string, Set<string>>();
     for (const d of allDeliveries) {

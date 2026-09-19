@@ -210,6 +210,20 @@ export const update = mutation({
   },
 });
 
+/** Organizer: mark a team as withdrawn from the tournament.
+ *  The team is hidden from the points table and leaderboard stats.
+ *  Any unplayed matches involving this team should be conceded first. */
+export const withdraw = mutation({
+  args: { teamId: v.id("teams"), withdrawn: v.boolean() },
+  handler: async (ctx, { teamId, withdrawn }) => {
+    const team = await ctx.db.get(teamId);
+    if (!team) throw new Error("Team not found.");
+    await requireOrganizer(ctx, team.tournamentId);
+    await ctx.db.patch(teamId, { withdrawn });
+    return teamId;
+  },
+});
+
 /** Organizer: create a team under a specific tournament. */
 export const create = mutation({
   args: {
